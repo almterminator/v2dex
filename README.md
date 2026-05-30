@@ -1,51 +1,55 @@
 # V2Dex
 
-High-performance desktop proxy client scaffold built around a shared React Native frontend, `sing-box`, and native platform backends.
+V2Dex is a cross-platform proxy client for Android and macOS, built around an Xray-compatible core, native platform backends, and a shared React Native interface.
 
-## Scope of this scaffold
+The app focuses on practical per-app routing: users can import proxy profiles, select nodes, and route selected applications through the tunnel while keeping the rest of the system on the normal network path.
 
-This repository provides:
+## Highlights
 
-- Shared React Native desktop UI in `src/`
-- macOS-oriented native tunnel scaffolding in Swift
-- premium desktop-oriented glassmorphism shell
-- profile import, node selection, per-app routing selection, and config preview
-- `sing-box` config generation layer
-- macOS `.app` and `.dmg` packaging scripts for the current native prototype
+- Xray/V2Ray-style profile parsing and config generation
+- Android VPNService integration for per-app routing
+- macOS native bridge and desktop packaging
+- Shared React Native UI for node selection, status, routing controls, and config preview
+- Installer artifacts for Android APK and macOS DMG releases
+- Native backend experiments for macOS Network Extension and desktop proxy control
 
-This is still a starter foundation, not a production-ready signed VPN app. The shared frontend is in place, and the current macOS path runs `sing-box` as a local user-space proxy that toggles the macOS system proxy. Signed Network Extension wiring and the Windows native backend still need to be completed.
+This repository contains an active prototype. The Android and macOS builds are usable development artifacts, while production distribution still needs final signing, notarization, and release hardening.
 
 ## Architecture
 
 - `src/`
-  - shared React Native desktop UI
+  - shared React Native UI
   - app state, models, services, and screen composition
+- `android/`
+  - Android host app, VPNService, bridge module, and bundled native tunnel assets
 - `native/V2DexCore/`
   - Swift package for parsing/import/config generation and tunnel orchestration
 - `native/V2DexNetworkExtension/`
-- `PacketTunnelProvider` skeleton for a future TUN mode build
+- `PacketTunnelProvider` skeleton for macOS packet tunnel mode
 - `Sources/V2DexApp/`
   - native macOS prototype app kept for local packaging and exploration
+- `macos/`
+  - React Native macOS host project and native bridge wiring
 - `docs/`
   - implementation notes and next steps
 
 ## Key design decisions
 
-- local-only macOS operation uses a user-space proxy plus macOS system proxy toggling
-- Routing rules are modeled around full tunnel and per-application process rules
-- UI state is isolated from tunnel/session state so reconnect logic can be native-driven
-- `sing-box` JSON generation is centralized to reduce config drift across the JS and Swift layers
+- Routing is designed around full-tunnel and per-application modes.
+- Android uses platform VPN APIs to control which apps enter the tunnel.
+- macOS keeps native tunnel/proxy control separated from the shared UI.
+- Core config generation is centralized to reduce drift between platforms.
+- The frontend stays platform-neutral while tunnel lifecycle and permissions remain native.
 
-## Frontend direction
+## Release Artifacts
 
-The preferred product direction is now:
+Published releases include:
 
-- React Native frontend shared between macOS and Windows
-- native tunnel backend per platform
-- `sing-box` as the common networking core
+- `app-release.apk` for Android
+- `V2Dex.dmg` for macOS
 
-See [desktop-bootstrap.md](/Users/alirezamotamed/Desktop/v2dex/docs/desktop-bootstrap.md) for the desktop bootstrap flow.
-See [installers-status.md](/Users/alirezamotamed/Desktop/v2dex/docs/installers-status.md) for the exact current installer state.
+See [desktop-bootstrap.md](docs/desktop-bootstrap.md) for the desktop bootstrap flow.
+See [installers-status.md](docs/installers-status.md) for the exact current installer state.
 
 ## Current build output
 
@@ -65,20 +69,17 @@ V2DEX_NOTARY_PROFILE="your-notarytool-profile" \
 zsh scripts/notarize_dmg.sh
 ```
 
-Current artifacts are written to:
+Current macOS artifacts are written to:
 
 - `.build-artifacts/V2Dex.app`
 - `.build-artifacts/V2Dex.dmg`
-
-The Release app embeds the React Native bundle. If `V2DEX_SINGBOX_PATH` is set, or `.local/bin/sing-box` exists, the packaging script also copies `sing-box` into the app bundle so end users do not need a terminal or Metro.
 
 These are still unsigned prototype artifacts, not final notarized installers.
 
 ## Next steps
 
-1. Bootstrap the actual React Native macOS and Windows host projects.
-2. Keep `src/` as the single shared desktop frontend.
-3. Replace the demo launcher path with bundled `sing-box` binaries per platform.
-4. Complete macOS signing and `Network Extension` wiring for true VPN/TUN mode.
-5. Implement the Windows native tunnel backend and installer path.
-6. Only after end-to-end tunnel validation, produce signed macOS and Windows installers.
+1. Complete production signing and notarization for macOS.
+2. Harden Android release signing and distribution metadata.
+3. Finish macOS Network Extension integration for true packet tunnel mode.
+4. Expand per-app routing validation across Android and macOS.
+5. Add automated release builds for APK and DMG artifacts.
