@@ -1,0 +1,41 @@
+{
+  "inbounds" : [
+    {
+      "listen" : "127.0.0.1",
+      "listen_port" : 2080,
+      "set_system_proxy" : false,
+      "tag" : "mixed-in",
+      "type" : "mixed"
+    }
+  ],
+  "log" : {
+    "level" : "info"
+  },
+  "outbounds" : [
+    {
+      "server" : "Snapp.ir",
+      "server_port" : 80,
+      "tag" : "proxy",
+      "transport" : {
+        "headers" : {
+          "Host" : "mine.helexp.ir"
+        },
+        "path" : "\/",
+        "type" : "ws"
+      },
+      "type" : "vless",
+      "uuid" : "e04c763e-8ec3-47b9-b57d-9a0782a95616"
+    },
+    {
+      "tag" : "direct",
+      "type" : "direct"
+    }
+  ],
+  "route" : {
+    "auto_detect_interface" : true,
+    "final" : "proxy",
+    "rules" : [
+
+    ]
+  }
+}

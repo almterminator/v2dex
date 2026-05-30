@@ -1,0 +1,42 @@
+{
+  "name": "v2dex",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node node_modules/react-native-macos/cli.js start",
+    "android": "react-native run-android",
+    "build:android": "cd android && ./gradlew assembleRelease",
+    "macos": "node node_modules/react-native-macos/cli.js run-macos",
+    "windows": "node node_modules/react-native-macos/cli.js run-windows",
+    "bootstrap:macos": "npx react-native-macos-init --overwrite",
+    "bootstrap:windows": "npx react-native-windows-init --overwrite",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-linear-gradient": "^2.8.3",
+    "react-native-macos": "0.76.12",
+    "react-native-safe-area-context": "^4.11.1",
+    "react-native-svg": "15.8.0",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/runtime": "^7.26.0",
+    "@react-native-community/cli": "^15.0.1",
+    "@react-native-community/cli-platform-android": "^15.0.1",
+    "@react-native/babel-preset": "0.76.9",
+    "@react-native/eslint-config": "0.76.9",
+    "@react-native/metro-config": "0.76.9",
+    "@react-native/typescript-config": "0.76.9",
+    "@types/jest": "^29.5.14",
+    "@types/react": "^18.3.12",
+    "@types/react-test-renderer": "^18.3.0",
+    "eslint": "^8.57.1",
+    "prettier": "^3.3.3",
+    "typescript": "5.6.3"
+  }
+}

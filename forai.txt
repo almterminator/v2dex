@@ -1,0 +1,765 @@
+گزارش جامع پروژه V2Dex برای AI بعدی
+تاریخ تهیه: 2026-05-30
+مسیر پروژه: /Users/alirezamotamed/Desktop/v2dex
+
+1. خلاصه خیلی مهم
+V2Dex یک کلاینت پراکسی/تونل چندسکویی است که UI مشترک آن با React Native نوشته شده و برای macOS، Android و در آینده Windows بک‌اند بومی جدا دارد. هدف اصلی پروژه مدیریت پروفایل‌های V2Ray/Xray/sing-box، انتخاب نود، اتصال/قطع تونل، حالت full tunnel و per-app routing، تست latency، نمایش IP خروجی، وارد کردن subscription/config از clipboard/URI/QR و بسته‌بندی دسکتاپ است.
+
+وضعیت فعلی:
+- UI مشترک در src/ فعال است و از App.tsx وارد DashboardScreen می‌شود.
+- macOS مسیر عملیاتی اصلی دسکتاپ است: bridge بومی Swift به SingboxRuntime وصل می‌شود، sing-box را اجرا می‌کند، روی 127.0.0.1:2080 mixed proxy می‌سازد، و بسته به حالت، system proxy macOS یا relaunch برنامه‌ها با proxy را مدیریت می‌کند.
+- Android مسیر VPN واقعی‌تری دارد: React Native bridge در Kotlin، V2DexVpnService، Xray، TProxy/tun2socks و Android VpnService استفاده می‌شود. local SOCKS روی 43080 است.
+- Windows فعلاً بیشتر اسکلت/placeholder است: فایل‌های C# برای bridge/runtime وجود دارد اما RN Windows host کامل و اتصال production کامل نشده است.
+- Network Extension macOS در native/V2DexNetworkExtension و قالب‌های entitlement وجود دارد اما طبق README هنوز مسیر signed TUN/VPN production کامل نیست.
+
+2. تکنولوژی‌ها و وابستگی‌ها
+فایل اصلی package.json:
+- React 18.3.1
+- react-native 0.76.9
+- react-native-macos 0.76.12
+- zustand برای state management
+- react-native-linear-gradient، react-native-safe-area-context، react-native-svg
+- TypeScript 5.6.3
+
+اسکریپت‌های مهم npm:
+- npm start: Metro با react-native-macos CLI
+- npm run android: اجرای Android
+- npm run build:android: ساخت release اندروید با Gradle
+- npm run macos: اجرای macOS host
+- npm run windows: اجرای مسیر Windows
+- npm run typecheck: tsc --noEmit
+- npm run lint: eslint
+
+3. ورودی برنامه و UI
+فایل App.tsx فقط SafeAreaProvider را دور DashboardScreen می‌گذارد:
+- App.tsx
+- src/screens/DashboardScreen.tsx
+
+DashboardScreen صفحه اصلی برنامه است. این صفحه:
+- language داخلی en/fa دارد و متن‌ها را از آبجکت translations می‌گیرد.
+- پروفایل فعال، نود فعال، لیست appRules، وضعیت تونل و اکشن‌ها را از useAppStore می‌گیرد.
+- هنگام mount، hydrate را صدا می‌زند و بعد status تونل را refresh می‌کند.
+- هر 6 ثانیه refreshTunnelStatus انجام می‌دهد.
+- هر 60 ثانیه refreshSubscriptions انجام می‌دهد.
+- import dialog، manual profile dialog، rename dialog و context menu دارد.
+- قابلیت‌های UI: اتصال/قطع، انتخاب mode، مدیریت پروفایل، import از URI/clipboard/QR، ping، تست همه پروفایل‌ها، refresh ترافیک subscription، discover apps، جستجوی app rules، کپی لینک profile و کپی command محلی autossh.
+
+کامپوننت‌های UI:
+- src/components/AppGradient.tsx: پس‌زمینه گرادیانی
+- src/components/GlassCard.tsx: کارت glassmorphism
+- src/components/Sidebar.tsx: sidebar پروفایل‌ها
+- src/components/StatPill.tsx: نمایش وضعیت/آمار
+- src/theme/tokens.ts: رنگ‌ها، فاصله‌ها و radiusها
+
+4. مدل داده‌ها
+فایل src/types/proxy.ts مدل‌های مشترک JS/TS را تعریف می‌کند.
+
+TunnelMode:
+- full
+- per-app
+
+ProxyProtocol:
+- vless
+- vmess
+- trojan
+- socks5
+- http
+- https
+- hysteria2
+- tuic
+
+ProxyNode شامل اطلاعات نود است:
+- id, name, protocol, server, port
+- username/password یا uuid/password
+- security: reality/tls/none
+- transport: tcp/ws/grpc/httpupgrade
+- flow, sni, path, wsHost
+- Reality fields: publicKey, shortId, fingerprint
+- alpn, alterId, vmessCipher
+- latencyMs و rawUri
+
+SubscriptionProfile:
+- id, title, source, sourceValue, updatedAt
+- trafficUsedGB, trafficTotalGB
+- usage شامل upload/download/total/used/remaining/expiresAt
+- nodes
+
+AppRouteRule:
+- bundleId
+- name
+- icon اختیاری
+- enabled
+- processName
+
+TunnelStatus:
+- connected, connecting
+- activeProfileId, activeNodeId
+- mode
+- backend: system-proxy/app-proxy/vpn
+- lastConnectedAt, lastError
+- dnsLeakProtection
+- binaryPath, activeConfigPath
+- proxyHost, proxyPort
+- pingMs, pingTimedOut
+- exitIp, exitCountry, exitCountryCode
+
+5. State management و جریان‌های اصلی
+فایل اصلی state:
+- src/state/appStore.ts
+
+useAppStore با Zustand ساخته شده و هسته رفتار برنامه است.
+
+state اولیه:
+- profiles: []
+- appRules: []
+- tunnel: defaultTunnel
+- importDraft: ''
+- activeProfile/activeNode undefined
+- hydrated false
+
+defaultTunnel:
+- connected false
+- connecting false
+- mode full
+- backend system-proxy
+- dnsLeakProtection true
+- proxyHost برای Android برابر 0.0.0.0 و برای بقیه 127.0.0.1
+- proxyPort برای Android برابر 43080 و برای بقیه 2080
+
+hydrate:
+- از nativeBackend.loadPersistedAppState state ذخیره‌شده را می‌خواند.
+- active profile/node را resolve می‌کند.
+- appRules را با defaultDesktopAppRules ادغام می‌کند.
+- defaultDesktopAppRules در macOS شامل Codex، Chrome، Telegram است و Codex را همیشه enabled نگه می‌دارد.
+
+persistStateSnapshot:
+- state قابل ذخیره را serialize می‌کند و از طریق savePersistedAppState به native bridge می‌فرستد.
+
+connect:
+- اگر activeNode نباشد lastError می‌گذارد.
+- اگر mode برابر per-app باشد و هیچ app rule فعال نباشد خطا می‌دهد.
+- startNativeTunnel را با node/mode/appRules صدا می‌زند.
+- snapshot برگشتی native را در tunnel state می‌ریزد.
+- بعد از delay کوتاه، refreshTunnelStatus می‌کند.
+- اگر connected بود refreshPing و refreshExitIpInfo انجام می‌دهد.
+
+disconnect:
+- stopNativeTunnel را صدا می‌زند.
+- connected/connecting را false می‌کند و backend/proxy/exitIp/config را پاک می‌کند.
+
+importFromClipboard/importFromUri:
+- ورودی را trim می‌کند.
+- اول importProfileFromUri در nativeBackend را امتحان می‌کند.
+- اگر node برگشت، buildImportedProfile می‌سازد و importProfile می‌کند.
+- اگر نشد، importProfileFromRaw در JS parser را fallback می‌کند.
+
+refreshSubscriptions:
+- فقط profileهایی با source=subscription را refresh می‌کند.
+- importProfileFromUri را دوباره می‌زند، nodeها و usage جدید را merge می‌کند.
+- latency قبلی nodeها را حفظ می‌کند.
+
+discoverApps:
+- از nativeBackend.discoverInstalledApps می‌گیرد.
+- با appRules قبلی merge می‌کند و enabledهای قبلی را حفظ می‌کند.
+- appهای system/noisy را تا حدی فیلتر می‌کند.
+
+ping:
+- refreshPing برای activeNode است.
+- pingAllProfiles برای اولین node همه profileها است.
+- اگر تونل وصل و profile فعال باشد latency از local proxy/tunnel probe گرفته می‌شود، وگرنه اتصال TCP مستقیم به server:port تست می‌شود.
+
+copyLocalProxyCommand:
+- یک autossh reverse command ثابت با root@5.160.218.99 می‌سازد و clipboard می‌کند.
+
+6. لایه nativeBackend در JavaScript
+فایل:
+- src/services/nativeBackend.ts
+
+این فایل abstraction بین UI/state و bridge بومی است.
+
+توابع مهم:
+- importProfileFromUri(uri): اگر native bridge موجود باشد importFromUri را می‌زند، خروجی JSON را parse می‌کند. اگر native fail کند و URI HTTP باشد با fetch fallback می‌کند.
+- importSubscriptionWithFetch(uri): subscription HTTP را دانلود می‌کند، base64 احتمالی را decode می‌کند، node URIها را extract می‌کند، usage را از header subscription-userinfo می‌خواند.
+- discoverInstalledApps/loadPersistedAppState/savePersistedAppState/importClipboardText/copyTextToClipboard/scanQr...
+- testProfileDownload/testServerConnection/testTunnelHttpLatency/getTunnelIpInfo
+- startNativeTunnel(input): برای Android از buildXrayConfig استفاده می‌کند، برای macOS/Windows از buildSingboxConfig. سپس bridge.startTunnel(configJson, mode, appRulesJson) را صدا می‌زند.
+
+نکته مهم:
+- getDesktopBridge در src/native/V2DexDesktopBridge.ts برای macos/windows/android مقدار V2DexBridge را برمی‌گرداند.
+- اگر native module لینک نشده باشد پیام Native module V2DexBridge is not linked... تولید می‌شود.
+
+7. Parserها و import config
+فایل JS:
+- src/services/configParser.ts
+
+پشتیبانی JS فعلی:
+- vless://
+- hysteria2://
+- tuic://
+- manual http/https/socks5
+
+تابع buildNodeFromUri:
+- بر اساس scheme، parseVlessUri/parseHysteria2Uri/parseTuicUri را صدا می‌زند.
+
+parseVlessUri:
+- URL را parse می‌کند.
+- security, type, path, host, sni, flow, allowInsecure, pbk/publicKey, sid/shortId, fp/fingerprint, alpn را می‌خواند.
+- id با hash ساده از URI ساخته می‌شود.
+- rawUri را حفظ می‌کند.
+
+extractNodeUris:
+- خطوط/spaceها را جدا می‌کند و فقط vless/hysteria2/tuic را نگه می‌دارد.
+
+buildManualProfile:
+- برای http/https/socks5 یک profile تک‌نودی می‌سازد.
+
+فایل Swift:
+- native/V2DexCore/Sources/SubscriptionImporter.swift
+
+پشتیبانی Swift گسترده‌تر است:
+- vless
+- vmess
+- hysteria2
+- tuic
+- trojan
+
+برای HTTP/HTTPS:
+- URLSession با timeout 20s
+- status 200 تا 299
+- body decode با utf8/ascii/isoLatin1
+- decode base64 subscription اگر لازم باشد
+- usage از header subscription-userinfo یا x-subscription-userinfo
+
+نکته مهم:
+- Android bridge Kotlin در importFromUri فعلاً فقط vless را واقعاً parse و داخل nodes اضافه می‌کند، هرچند extractNodeUris شامل hysteria2/tuic هم هست. اگر Android برای hysteria2/tuic لازم است باید parse آنها در Kotlin کامل شود.
+
+8. ساخت config برای sing-box
+دو نسخه موازی وجود دارد:
+- src/services/singboxBuilder.ts در JS
+- native/V2DexCore/Sources/SingboxConfigBuilder.swift در Swift
+
+در مسیر React Native فعلی، startNativeTunnel کانفیگ را در JS می‌سازد و به native bridge می‌دهد. در Swift core هم builder مشابه وجود دارد و برای مسیر native prototype/CLI قابل استفاده است.
+
+ساختار config:
+- log.level = info
+- inbounds:
+  - اگر useTun true باشد: inbound نوع tun با address 172.19.0.1/30، auto_route true، strict_route true، stack system
+  - همیشه mixed inbound روی 127.0.0.1:2080 با set_system_proxy false
+- outbounds:
+  - proxy outbound براساس node
+  - direct outbound
+- route:
+  - auto_detect_interface true
+  - final:
+    - در per-app همراه tun: direct
+    - در بقیه حالت‌ها: proxy
+  - rules برای per-app
+
+useTun:
+- true اگر mode full باشد.
+- true اگر mode per-app باشد و appRules شامل Telegram enabled باشد.
+- دلیل: Telegram/بعضی اپ‌ها با proxy arguments خوب کنترل نمی‌شوند و نیاز به TUN دارند.
+
+per-app rules:
+- برای appRules فعال، process_name و process_path_regex تولید می‌شود.
+- aliasهای ویژه برای Chrome، Codex، ChatGPT، Telegram، Safari، VSCode تعریف شده‌اند.
+
+outboundها:
+- vless: uuid, flow, tls, transport, udp_over_tcp
+- vmess: uuid, alter_id, security, tls, transport
+- hysteria2: password, tls
+- tuic: uuid, password, tls
+- trojan: password, tls, transport
+- http/https: type http، username/password، tls در https
+- socks5: type socks version 5
+
+TLS:
+- اگر security غیر none باشد enabled true
+- server_name از sni
+- insecure از allowInsecure
+- alpn
+- utls fingerprint
+- reality شامل public_key و short_id
+
+transport:
+- ws: path و Host header
+- grpc: service_name
+- httpupgrade: path و host
+
+9. ساخت config برای Xray در Android
+فایل:
+- src/services/xrayBuilder.ts
+
+Android به جای sing-box از Xray استفاده می‌کند.
+
+local SOCKS:
+- 0.0.0.0:43080
+- protocol socks
+- udp true
+- sniffing برای http/tls/quic
+
+routing:
+- private IP ranges مستقیم direct
+- بقیه tcp/udp به proxy
+
+protocol support:
+- vless
+- vmess
+- trojan
+- socks5
+- http/https
+- سایر protocolها خطا می‌دهند: "<PROTOCOL> is not supported by the Android Xray runtime yet."
+
+streamSettings:
+- network براساس transport: grpc/ws/tcp
+- security: reality/tls/none
+- tlsSettings یا realitySettings
+- wsSettings/grpcSettings
+
+10. Native bridge مشترک از نگاه TypeScript
+فایل:
+- src/native/V2DexBridge.ts
+
+Native module با نام V2DexBridge انتظار می‌رود. سطح API:
+- importFromClipboard()
+- copyToClipboard(value)
+- scanQrFromCamera()
+- scanQrFromGallery()
+- importFromUri(uri)
+- discoverInstalledApplications()
+- loadAppState()
+- saveAppState(stateJson)
+- testProfileDownload(sourceValue)
+- testServerConnection(nodeJson)
+- testTunnelHttpLatency(url)
+- getTunnelIpInfo()
+- startTunnel(configJson, mode, appRulesJson)
+- stopTunnel()
+- getTunnelStatus()
+
+این API باید در macOS Swift، Android Kotlin و Windows native معادل داشته باشد.
+
+11. macOS bridge و runtime
+bridge:
+- macos/V2DexBridge/V2DexBridge.swift
+- native/V2DexMacBridge هم فایل مشابه/قدیمی دارد.
+
+کارهای bridge macOS:
+- clipboard با NSPasteboard
+- QR camera/gallery روی macOS unavailable است.
+- importFromUri -> BackendCoordinator.importProfile
+- discoverInstalledApplications -> BackendCoordinator.discoverApplications
+- persistence -> UserDefaults key: v2dex.persisted.app.state
+- testProfileDownload -> BackendCoordinator.testSubscriptionDownload
+- testServerConnection -> ConnectivityTester.testTCPConnection
+- testTunnelHttpLatency -> ConnectivityTester.testHTTPViaLocalProxy روی 127.0.0.1:2080
+- getTunnelIpInfo -> ip-api.com و ipwho.is از طریق local proxy
+- startTunnel -> SingboxRuntime.shared.start(configData, mode, appRules)
+- stopTunnel -> SingboxRuntime.shared.stopIfNeeded()
+- getTunnelStatus -> SingboxRuntime.shared.statusSnapshot()
+
+Swift core:
+- native/V2DexCore/Sources/BackendCoordinator.swift
+- native/V2DexCore/Sources/SingboxRuntime.swift
+- native/V2DexCore/Sources/SingboxConfigBuilder.swift
+- native/V2DexCore/Sources/SubscriptionImporter.swift
+- native/V2DexCore/Sources/ApplicationDiscovery.swift
+- native/V2DexCore/Sources/AppProxyLauncher.swift
+- native/V2DexCore/Sources/MacSystemProxyController.swift
+- native/V2DexCore/Sources/ConnectivityTester.swift
+- native/V2DexCore/Sources/Models.swift
+
+SingboxRuntime:
+- singleton است.
+- binary path را از این مسیرها پیدا می‌کند:
+  - explicit path
+  - env V2DEX_SINGBOX_PATH
+  - app bundle resource sing-box
+  - repo .local/bin/sing-box
+  - /opt/homebrew/bin/sing-box
+  - /usr/local/bin/sing-box
+- config را در temp/v2dex-runtime/sing-box-UUID.json می‌نویسد.
+- اگر config شامل tun inbound باشد، sing-box را با osascript و administrator privileges اجرا می‌کند و PID را نگه می‌دارد.
+- اگر tun نباشد Process عادی اجرا می‌کند.
+- منتظر می‌ماند local proxy روی 127.0.0.1:2080 با nc باز شود.
+- full mode بدون elevated TUN:
+  - MacSystemProxyController.enableProxy برای همه network services فعال می‌شود.
+  - AppProxyLauncher.relaunchRunningEnvironmentProxyApps برای اپ‌هایی مثل Telegram که env proxy می‌گیرند انجام می‌شود.
+  - backend = system-proxy
+- per-app mode:
+  - system proxy disable می‌شود.
+  - AppProxyLauncher.relaunchSelectedApps فقط appهای enabled و پشتیبانی‌شده را با proxy arguments/env relaunch می‌کند.
+  - backend = app-proxy
+- stopIfNeeded:
+  - sing-box process یا elevated PID را terminate/kill می‌کند.
+  - proxyهای macOS را restore/disable می‌کند.
+  - appهای relaunch شده را بدون proxy relaunch می‌کند.
+
+MacSystemProxyController:
+- از /usr/sbin/networksetup استفاده می‌کند.
+- قبل از تغییر proxy، وضعیت web/secure web/socks را برای هر network service ذخیره می‌کند.
+- enableProxy برای web, secure web, socks host/port را set و state را on می‌کند.
+- disableProxy اگر state ذخیره شده داشته باشد restore می‌کند، وگرنه forceDisableAllProxies انجام می‌دهد.
+
+AppProxyLauncher:
+- appهای انتخابی را terminate و با proxy دوباره launch می‌کند.
+- برای Chromium family از --proxy-server=http://host:port و flags اضافه استفاده می‌کند.
+- برای Telegram و برخی environmentProxyBundleIDs از env vars مثل HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/SOCKS_PROXY استفاده می‌کند.
+- هنگام قطع اتصال appها را بدون proxy relaunch می‌کند.
+
+ApplicationDiscovery:
+- از NSWorkspace.shared.runningApplications appهای در حال اجرا را می‌گیرد.
+- bundleId/name/processName تولید می‌کند.
+- حداکثر پیش‌فرض 200.
+
+12. Android bridge و runtime
+فایل‌های مهم:
+- android/app/src/main/java/com/v2dex/V2DexBridgeModule.kt
+- android/app/src/main/java/com/v2dex/V2DexVpnService.kt
+- android/app/src/main/java/com/v2dex/V2DexPackage.kt
+- android/app/src/main/java/com/v2dex/QrScanActivity.kt
+- android/app/src/main/java/hev/htproxy/TProxyService.kt
+- android/app/src/main/jniLibs/arm64-v8a/libxray.so
+- android/app/src/main/assets/xray/geoip.dat
+- android/app/src/main/assets/xray/geosite.dat
+- android/app/src/main/jniLibs/arm64-v8a/libhev-socks5-tunnel.so
+
+V2DexBridgeModule:
+- clipboard import/copy با ClipboardManager
+- QR camera با QrScanActivity
+- QR gallery با MediaStore و ML Kit BarcodeScanning
+- importFromUri:
+  - اگر HTTP/HTTPS باشد subscription را دانلود می‌کند.
+  - body را base64 decode می‌کند اگر لازم باشد.
+  - nodeUris را extract می‌کند.
+  - فعلاً فقط vless:// را parseVlessNode می‌کند.
+  - usage را از subscription-userinfo می‌خواند.
+- discoverInstalledApplications:
+  - launcher apps را query می‌کند.
+  - known network packages مثل Telegram, Chrome, ChatGPT, Edge, Firefox را اضافه می‌کند.
+  - خروجی AppRouteRule با bundleId=packageName و processName=packageName
+- persistence:
+  - SharedPreferences name=v2dex key=app_state
+- testProfileDownload:
+  - دانلود subscription و تعداد config و traffic remaining
+- testServerConnection:
+  - Socket TCP به server:port با timeout 5s
+- testTunnelHttpLatency:
+  - HTTP GET از طریق SOCKS 127.0.0.1:43080
+- getTunnelIpInfo:
+  - ip-api.com و ipwho.is از طریق local SOCKS
+- startTunnel:
+  - VpnService.prepare را چک می‌کند.
+  - اگر permission لازم بود Activity result می‌گیرد.
+  - بعد V2DexVpnService را با ACTION_START و config/mode/appRules startForegroundService می‌کند.
+- stopTunnel:
+  - V2DexVpnService.stopActiveTunnel()
+  - ACTION_STOP
+- getTunnelStatus:
+  - statusMap از V2DexVpnService.status
+  - proxyHost تلاش می‌کند local network IPv4 را برگرداند، fallback 0.0.0.0
+  - proxyPort 43080
+
+V2DexVpnService:
+- از TProxyService ارث‌بری می‌کند.
+- ACTION_START/ACTION_STOP را مدیریت می‌کند.
+- foreground notification با channel v2dex_tunnel.
+- startXray:
+  - xray-runtime dir در filesDir
+  - bundled Xray binary را از libxray.so یا APK آماده می‌کند.
+  - geoip.dat/geosite.dat را از assets استخراج می‌کند.
+  - config.json را می‌نویسد.
+  - ProcessBuilder(binary, run, -config, config.json) اجرا می‌کند.
+  - XRAY_LOCATION_ASSET را runtimeDir می‌گذارد.
+  - بعد tun2socks.yml می‌نویسد.
+  - establishVpn mode/appRulesJson را اجرا می‌کند.
+  - fd را detach می‌کند و TProxyStartService(config, fd) را صدا می‌زند.
+  - status را connected true و backend vpn می‌کند.
+- establishVpn:
+  - Session V2DEX
+  - MTU 1280
+  - IPv4 198.18.0.1/16
+  - IPv6 fdfe:dcba:9876::1/126
+  - route 0.0.0.0/0 و ::/0
+  - DNS: 1.1.1.1, 8.8.8.8, 2606:4700:4700::1111, 2001:4860:4860::8888
+  - per-app: appهای enabled را addAllowedApplication می‌کند.
+  - full: خود package برنامه را addDisallowedApplication می‌کند.
+- tun2socks.yml:
+  - socks5 127.0.0.1:43080
+  - udp enabled
+  - timeoutها و log-level warn
+- stop:
+  - TProxyStopService
+  - fd را close
+  - xray process را terminate/kill
+  - status disconnected
+
+13. Windows
+فایل‌ها:
+- windows/README.md
+- windows/V2DexWindowsBridge.cs
+- windows/WindowsTunnelRuntime.cs
+- windows/V2DexWindowsBridge.csproj
+- windows/AppxManifest.template.xml
+- windows/build-msix.ps1
+
+وضعیت:
+- README می‌گوید این فولدر placeholder برای React Native Windows host و native backend است.
+- intended stack: React Native Windows، C# یا C++/WinRT، sing-box Windows binary، Wintun driver، optional service.
+- V2DexWindowsBridge سطح API شبیه bridge مشترک دارد ولی ImportFromUri placeholder است و server را pending.windows.backend می‌گذارد.
+- DiscoverInstalledApplications خروجی mock برای chrome/telegram/vscode می‌دهد.
+- Runtime واقعی کامل نیست و باید تکمیل شود.
+
+14. macOS Network Extension
+فایل‌ها:
+- native/V2DexNetworkExtension/PacketTunnelProvider.swift
+- native/V2DexNetworkExtension/README.md
+- templates/macos/V2DexPacketTunnel.entitlements
+- templates/macos/V2DexHost.entitlements
+- templates/macos/NetworkExtension-Info.template.plist
+- macos/V2DexPacketTunnel/Info.plist
+- macos/V2DexPacketTunnel/V2DexPacketTunnel.entitlements
+
+وضعیت کلی:
+- PacketTunnelProvider اسکلت آینده برای TUN/VPN production است.
+- README پروژه صریحاً می‌گوید signed Network Extension wiring هنوز کامل نشده.
+- مسیر فعلی macOS بیشتر user-space proxy/system proxy/app proxy است، هرچند اگر config tun inbound داشته باشد SingboxRuntime می‌تواند elevated sing-box را با administrator privileges اجرا کند.
+
+15. Native Swift prototype app و CLI
+فایل‌ها:
+- Sources/V2DexApp/V2DexApp.swift
+- Sources/V2DexApp/AppStore.swift
+- Sources/V2DexApp/Models.swift
+- Sources/V2DexApp/DemoData.swift
+- Sources/V2DexApp/DashboardView.swift
+- Sources/V2DexCLI/main.swift
+- Package.swift
+
+این بخش یک prototype بومی SwiftUI/CLI کنار React Native است و برای packaging/exploration استفاده می‌شود. مسیر محصول ترجیحی طبق README، React Native frontend مشترک و backend بومی هر پلتفرم است.
+
+16. Build، packaging و scripts
+فایل‌های مهم:
+- scripts/build_app.sh
+- scripts/build_dmg.sh
+- scripts/check_environment.sh
+- scripts/generate_app_icon.sh
+- scripts/sign_app.sh
+- scripts/copy_singbox_into_app.sh
+- scripts/postbootstrap_macos.sh
+- scripts/notarize_dmg.sh
+
+طبق README:
+- ساخت app bundle و DMG:
+  zsh scripts/build_dmg.sh
+- خروجی‌ها:
+  .build-artifacts/V2Dex.app
+  .build-artifacts/V2Dex.dmg
+- اگر V2DEX_SINGBOX_PATH ست باشد یا .local/bin/sing-box وجود داشته باشد، sing-box داخل app bundle کپی می‌شود.
+- sign:
+  V2DEX_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" zsh scripts/sign_app.sh
+- notarize:
+  V2DEX_NOTARY_PROFILE="your-notarytool-profile" zsh scripts/notarize_dmg.sh
+
+مستندات:
+- docs/architecture.md: split runtime و bridge surface پیشنهادی
+- docs/desktop-bootstrap.md
+- docs/bootstrap.md
+- docs/native-integration.md
+- docs/installers-status.md
+
+17. جریان کامل اتصال در macOS از UI تا شبکه
+1. کاربر profile/node را انتخاب می‌کند.
+2. در UI دکمه connect زده می‌شود.
+3. DashboardScreen اکشن connect از useAppStore را صدا می‌زند.
+4. appStore.connect اعتبارسنجی می‌کند.
+5. startNativeTunnel در src/services/nativeBackend.ts صدا زده می‌شود.
+6. چون Platform.OS macos است، buildSingboxConfig کانفیگ sing-box می‌سازد.
+7. bridge.startTunnel(configJson, mode, appRulesJson) صدا زده می‌شود.
+8. macos/V2DexBridge/V2DexBridge.swift متد startTunnel را می‌گیرد.
+9. JSON appRules decode می‌شود و SingboxRuntime.shared.start اجرا می‌شود.
+10. SingboxRuntime:
+   - sing-box binary را پیدا می‌کند.
+   - config را temp می‌نویسد.
+   - اگر TUN لازم باشد با administrator privileges اجرا می‌کند.
+   - وگرنه Process عادی run می‌کند.
+   - تا باز شدن 127.0.0.1:2080 صبر می‌کند.
+   - full mode: system proxy macOS را روی 127.0.0.1:2080 فعال می‌کند.
+   - per-app: system proxy را disable و appهای selected را با proxy relaunch می‌کند.
+11. TunnelStatusSnapshot به JS برمی‌گردد.
+12. appStore tunnel state را update می‌کند.
+13. refreshTunnelStatus، refreshPing و refreshExitIpInfo اجرا می‌شوند.
+
+18. جریان کامل اتصال در Android از UI تا شبکه
+1. کاربر connect می‌زند.
+2. appStore.connect -> startNativeTunnel.
+3. چون Platform.OS android است، buildXrayConfig کانفیگ Xray می‌سازد.
+4. bridge.startTunnel(configJson, mode, appRulesJson) صدا زده می‌شود.
+5. V2DexBridgeModule.startTunnel:
+   - VpnService.prepare را چک می‌کند.
+   - اگر permission لازم باشد Activity permission را باز می‌کند.
+   - بعد startVpn را اجرا می‌کند.
+6. startVpn، V2DexVpnService را با ACTION_START راه می‌اندازد.
+7. V2DexVpnService.startXray:
+   - binary و assets را آماده می‌کند.
+   - Xray را با config اجرا می‌کند.
+   - VPN interface را establish می‌کند.
+   - tun fd را به TProxy/tun2socks می‌دهد.
+   - traffic VPN به SOCKS 127.0.0.1:43080 و سپس به Xray outbound می‌رود.
+8. statusMap به JS وصل می‌شود و UI وضعیت را نشان می‌دهد.
+
+19. جریان import subscription/config
+ورودی‌ها:
+- Clipboard
+- URI/Text field
+- QR camera/gallery در Android
+- Manual profile برای http/https/socks5
+
+JS flow:
+- importFromClipboard یا importFromUri در appStore
+- nativeBackend.importProfileFromUri
+- native bridge importFromUri اگر موجود باشد
+- fallback fetch در JS برای HTTP
+- fallback importProfileFromRaw برای raw config
+
+Usage/traffic:
+- از header subscription-userinfo خوانده می‌شود.
+- fields: upload, download, total, expire
+- usedBytes = upload + download
+- remainingBytes = total - used
+- expiresAt از expire epoch seconds
+- گاهی remaining traffic از نام node هم parse می‌شود.
+
+20. تفاوت‌های مهم پلتفرم‌ها
+macOS:
+- local proxy: 127.0.0.1:2080
+- runtime: sing-box
+- full mode: system proxy یا در صورت TUN elevated sing-box
+- per-app: process rules در sing-box و/یا relaunch app با proxy args/env
+- persistence: UserDefaults
+- QR unavailable
+
+Android:
+- local proxy: 0.0.0.0/127.0.0.1:43080
+- runtime: Xray + VpnService + tun2socks/TProxy
+- full mode: VPN همه traffic به جز خود app
+- per-app: addAllowedApplication برای packages selected
+- persistence: SharedPreferences
+- QR camera/gallery موجود
+
+Windows:
+- planned: sing-box + Wintun
+- فعلاً placeholder و غیرproduction
+
+21. محدودیت‌ها و ریسک‌های فعلی
+- پروژه git repo نیست یا در این مسیر .git ندارد؛ git status خطا می‌دهد.
+- README می‌گوید scaffold/starter foundation است، production-ready signed VPN app نیست.
+- macOS Network Extension production wiring کامل نیست.
+- Windows native backend کامل نیست.
+- Android import Kotlin فقط VLESS را parse می‌کند؛ اما TS/Swift پشتیبانی بیشتری دارند.
+- JS configParser فقط vless/hysteria2/tuic را پشتیبانی می‌کند، اما singboxBuilder outboundهای بیشتری دارد.
+- دو منبع config builder وجود دارد: JS و Swift. باید مراقب drift بین src/services/singboxBuilder.ts و native/V2DexCore/Sources/SingboxConfigBuilder.swift بود.
+- برای macOS full mode system proxy روی همه network services تغییر می‌کند؛ cleanup/restore مهم است.
+- per-app macOS با relaunch برنامه‌ها کار می‌کند و ممکن است برای همه appها پشتیبانی نشود.
+- TUN macOS elevated با osascript admin privilege است، نه Network Extension production.
+- Android فقط arm64-v8a binaryها در مسیر فعلی دیده می‌شود؛ ABIهای دیگر باید بررسی/اضافه شوند اگر release عمومی لازم است.
+- DNS leak protection در مدل state هست اما رفتار دقیق آن بسته به runtime/config فعلی باید جداگانه audit شود.
+
+22. نقاطی که AI بعدی برای توسعه باید اول ببیند
+اگر هدف تغییر UI است:
+- src/screens/DashboardScreen.tsx
+- src/components/*
+- src/theme/tokens.ts
+- src/state/appStore.ts
+
+اگر هدف import/config است:
+- src/services/configParser.ts
+- src/services/nativeBackend.ts
+- native/V2DexCore/Sources/SubscriptionImporter.swift
+- android/app/src/main/java/com/v2dex/V2DexBridgeModule.kt
+
+اگر هدف اتصال macOS است:
+- src/services/singboxBuilder.ts
+- macos/V2DexBridge/V2DexBridge.swift
+- native/V2DexCore/Sources/SingboxRuntime.swift
+- native/V2DexCore/Sources/MacSystemProxyController.swift
+- native/V2DexCore/Sources/AppProxyLauncher.swift
+
+اگر هدف اتصال Android است:
+- src/services/xrayBuilder.ts
+- android/app/src/main/java/com/v2dex/V2DexBridgeModule.kt
+- android/app/src/main/java/com/v2dex/V2DexVpnService.kt
+- android/app/src/main/AndroidManifest.xml
+- android/app/build.gradle
+
+اگر هدف Windows است:
+- windows/README.md
+- windows/V2DexWindowsBridge.cs
+- windows/WindowsTunnelRuntime.cs
+- react-native-windows bootstrap وضعیت فعلی
+
+اگر هدف installer/signing است:
+- README.md
+- docs/installers-status.md
+- scripts/build_dmg.sh
+- scripts/sign_app.sh
+- scripts/notarize_dmg.sh
+- scripts/copy_singbox_into_app.sh
+
+23. پیشنهادهای توسعه بعدی
+1. یک منبع واحد برای ساخت sing-box config انتخاب شود یا تست snapshot بین JS و Swift اضافه شود تا drift رخ ندهد.
+2. Android parser برای vmess/trojan/hysteria2/tuic کامل شود یا import همیشه در JS انجام شود و native فقط برای دانلود/permission/runtime باشد.
+3. Network Extension macOS اگر هدف VPN واقعی است تکمیل شود.
+4. Windows bridge از placeholder به native module واقعی RN Windows تبدیل شود.
+5. تست‌های unit برای configParser، singboxBuilder، xrayBuilder و SubscriptionImporter اضافه شود.
+6. cleanup macOS proxy در crash/termination app تقویت شود.
+7. وضعیت binaryها و ABIهای Android برای release عمومی کامل شود.
+8. خطاها و stateهای اتصال در UI دقیق‌تر تفکیک شوند: binary missing، permission denied، proxy port timeout، subscription parse failure.
+9. مستندات نصب sing-box/Xray و مسیرهای binary برای توسعه‌دهنده و کاربر نهایی به‌روز شود.
+
+24. چک‌لیست سریع اجرای پروژه
+برای بررسی TypeScript:
+  npm run typecheck
+
+برای اجرای Metro:
+  npm start
+
+برای macOS:
+  npm run macos
+
+برای Android:
+  npm run android
+
+برای Android release:
+  npm run build:android
+
+برای ساخت DMG macOS:
+  zsh scripts/build_dmg.sh
+
+25. خلاصه نهایی معماری در یک نگاه
+UI مشترک:
+App.tsx -> DashboardScreen -> useAppStore
+
+State/actions:
+useAppStore -> nativeBackend
+
+Bridge:
+nativeBackend -> V2DexBridge native module
+
+macOS:
+V2DexBridge.swift -> SingboxRuntime -> sing-box -> 127.0.0.1:2080 -> system proxy یا app relaunch/per-app
+
+Android:
+V2DexBridgeModule.kt -> V2DexVpnService -> Xray SOCKS 43080 + tun2socks/TProxy -> Android VpnService
+
+Windows:
+V2DexWindowsBridge.cs -> WindowsTunnelRuntime.cs، فعلاً اسکلت و نیازمند تکمیل
+
+مهم‌ترین فایل برای فهم کل پروژه:
+- src/state/appStore.ts
+- src/services/nativeBackend.ts
+- src/services/singboxBuilder.ts
+- src/services/xrayBuilder.ts
+- macos/V2DexBridge/V2DexBridge.swift
+- native/V2DexCore/Sources/SingboxRuntime.swift
+- android/app/src/main/java/com/v2dex/V2DexBridgeModule.kt
+- android/app/src/main/java/com/v2dex/V2DexVpnService.kt
