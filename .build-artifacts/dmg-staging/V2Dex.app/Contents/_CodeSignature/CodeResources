@@ -10,7 +10,7 @@
 		</data>
 		<key>Resources/Assets.car</key>
 		<data>
-		o/TC5/WYmYSz+J5qCcWZDREsL4Y=
+		l1BqU4uZrahHaes0qDMzdyzRW0w=
 		</data>
 		<key>Resources/Base.lproj/Main.storyboardc/Info.plist</key>
 		<data>
@@ -18,7 +18,7 @@
 		</data>
 		<key>Resources/Base.lproj/Main.storyboardc/MainMenu.nib</key>
 		<data>
-		AXgOJ3zkj0mrO3+aE3GloHhAwBE=
+		Dwg+42hlR23R6C4k2ZtcsemJHLg=
 		</data>
 		<key>Resources/PrivacyInfo.xcprivacy</key>
 		<data>
@@ -26,11 +26,11 @@
 		</data>
 		<key>Resources/RCT-Folly_privacy.bundle/Contents/Info.plist</key>
 		<data>
-		9MReuzhk6W86XJ21gD16Pp9ahjs=
+		j4LdAGmKMnx429OsapKPXsc8gSw=
 		</data>
 		<key>Resources/React-Core_privacy.bundle/Contents/Info.plist</key>
 		<data>
-		oeyVs3j2v4vxzVYfe42Zyb1/UaI=
+		ea3KxyGQfLNwjGhH9AiDwQ81OkY=
 		</data>
 		<key>Resources/React-Core_privacy.bundle/Contents/Resources/PrivacyInfo.xcprivacy</key>
 		<data>
@@ -38,7 +38,7 @@
 		</data>
 		<key>Resources/React-cxxreact_privacy.bundle/Contents/Info.plist</key>
 		<data>
-		EaYC6227WvZCtXwnB7F9ustlpEA=
+		7i/xim2cBxZe4gRR/9oLQZd9+j0=
 		</data>
 		<key>Resources/React-cxxreact_privacy.bundle/Contents/Resources/PrivacyInfo.xcprivacy</key>
 		<data>
@@ -50,15 +50,15 @@
 		</data>
 		<key>Resources/boost_privacy.bundle/Contents/Info.plist</key>
 		<data>
-		rmVWR5WAj41Id1VZiJIHeqTNi5o=
+		hWIlm9MVgNlbVY2Ap5zZzJt7bac=
 		</data>
 		<key>Resources/glog_privacy.bundle/Contents/Info.plist</key>
 		<data>
-		4YxWYbKAFMggDvS1vg9EXLgZpv8=
+		ulrFBwA1mytBoqFK6AxryDcCGms=
 		</data>
 		<key>Resources/main.jsbundle</key>
 		<data>
-		oGQdx22MqbcYTsnumHvM/qN7t3g=
+		K1xbjj9jZk1Uj/SUY/owQYvBWeI=
 		</data>
 		<key>Resources/sing-box</key>
 		<data>
@@ -71,10 +71,10 @@
 		<dict>
 			<key>cdhash</key>
 			<data>
-			lMyxZwOuFohh+Fcknez4IbkEo/A=
+			Pr3e+QFHQ3D2oyoywLeBrPU4s88=
 			</data>
 			<key>requirement</key>
-			<string>cdhash H"94ccb16703ae168861f857249decf821b904a3f0" or cdhash H"2df8f77ca131cd10508992f453212709099ea525"</string>
+			<string>cdhash H"3ebddef901474370f6a32a32c0b781acf538b3cf" or cdhash H"2df8f77ca131cd10508992f453212709099ea525"</string>
 		</dict>
 		<key>Resources/AppIcon.icns</key>
 		<dict>
@@ -87,7 +87,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			SkWXgEyW9ZVB++Yog90P/BvJ++zW4e41AJzLTfSzVwg=
+			6ER7oHlteXybGQqligE8vVL+d4USzqjhWqWqsbpQjUo=
 			</data>
 		</dict>
 		<key>Resources/Base.lproj/Main.storyboardc/Info.plist</key>
@@ -101,7 +101,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			SuZkUKoZBVQB11OVRDjbWDRp00O1XFh9gRI0Q8mjPAQ=
+			JTfyQ7OZNI9sKui4RHk/OMaD+eHLiL7ztsHgB4OoD78=
 			</data>
 		</dict>
 		<key>Resources/PrivacyInfo.xcprivacy</key>
@@ -115,14 +115,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			kI83mIVD+mBGEQyw2eBMmWq8nuIh7l+Q7k3/dU/WzMA=
+			hF82LR6BPDqdz8bq2K43+7wwT+BoxHmja7/9TrmeDl0=
 			</data>
 		</dict>
 		<key>Resources/React-Core_privacy.bundle/Contents/Info.plist</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			QK7mzSb4SAPg3qvvTBQoHXjV+afASravR+vXFqMMJNk=
+			UbgXE2GUc9QGw+c4CgqBvrXTehbDxor33egjeIecuc4=
 			</data>
 		</dict>
 		<key>Resources/React-Core_privacy.bundle/Contents/Resources/PrivacyInfo.xcprivacy</key>
@@ -136,7 +136,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			K38L1mv36fcaSDUWKBXG25eWg2j0diT7RIgxuabWAno=
+			ktkdOW23KCSpaE00TUDPeUObdXyyT3vdcwCrU1rMH/0=
 			</data>
 		</dict>
 		<key>Resources/React-cxxreact_privacy.bundle/Contents/Resources/PrivacyInfo.xcprivacy</key>
@@ -157,21 +157,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			uRxordddZLO87njF8g+1AITQXrgwc6TXjFM7erqOQbs=
+			6oCm63JdDMmDviexG9yjzsj0UVpaF+veGqgzSjpBR1I=
 			</data>
 		</dict>
 		<key>Resources/glog_privacy.bundle/Contents/Info.plist</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			2sPZBvQo7fmdmY+29k9rnLlmm3BRuoGUJ1uOocUMznA=
+			CWOUh0viAO2tVNfo/jjJSWxNi+jie9STsnLN0TSNZws=
 			</data>
 		</dict>
 		<key>Resources/main.jsbundle</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			0bEOeKt7yqKPzWifCTAxnF6eAer1VMM9E1f7KzaFTTI=
+			+xGAFl7oftAxaeHtjCL4OKp8wKBahybR0f0BSLKC+Rc=
 			</data>
 		</dict>
 		<key>Resources/sing-box</key>

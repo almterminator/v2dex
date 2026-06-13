@@ -60,11 +60,11 @@ public final class SingboxRuntime: @unchecked Sendable {
         appRules: [AppRouteRule] = [],
         binaryPath explicitBinaryPath: String? = nil
     ) throws -> TunnelStatusSnapshot {
-        try stopIfNeeded()
-
         guard let resolvedBinaryPath = resolveBinaryPath(explicitPath: explicitBinaryPath) else {
             throw SingboxRuntimeError.binaryNotFound(environmentKey: Self.environmentBinaryKey)
         }
+
+        try stopIfNeeded(cleanupStaleProcesses: false)
 
         let configPath = try writeConfig(configData)
         let usesElevatedTun = configContainsTunInbound(configData)
@@ -90,14 +90,24 @@ public final class SingboxRuntime: @unchecked Sendable {
                     configPath: configPath,
                     logPath: elevatedLogPath
                 )
+                stateQueue.sync {
+                    self.elevatedPID = pid
+                }
                 try waitForProxyReady(elevatedPID: pid, logPath: elevatedLogPath)
-                try proxyController.disableProxy()
+                if mode == .full {
+                    try proxyController.enableProxy(
+                        host: SingboxConfigBuilder.loopbackProxyHost,
+                        port: SingboxConfigBuilder.localProxyPort
+                    )
+                } else {
+                    try proxyController.disableProxy()
+                }
                 stateQueue.sync {
                     self.process = nil
                     self.elevatedPID = pid
                     self.connecting = false
                     self.lastConnectedAt = Date()
-                    self.backend = .appProxy
+                    self.backend = mode == .full ? .systemProxy : .appProxy
                 }
                 return statusSnapshot()
             } catch {
@@ -148,28 +158,18 @@ public final class SingboxRuntime: @unchecked Sendable {
             try waitForProxyReady(process: process)
             if mode == .full {
                 try proxyController.enableProxy(
-                    host: SingboxConfigBuilder.localProxyHost,
-                    port: SingboxConfigBuilder.localProxyPort
-                )
-                let launchResult = try AppProxyLauncher.relaunchRunningEnvironmentProxyApps(
-                    rules: appRules,
-                    host: SingboxConfigBuilder.localProxyHost,
+                    host: SingboxConfigBuilder.loopbackProxyHost,
                     port: SingboxConfigBuilder.localProxyPort
                 )
                 stateQueue.sync {
-                    self.proxiedAppBundleIDs = launchResult.launchedBundleIDs
-                    self.unsupportedPerAppBundleIDs = launchResult.unsupportedBundleIDs
+                    self.proxiedAppBundleIDs = []
+                    self.unsupportedPerAppBundleIDs = []
                 }
             } else {
                 try proxyController.disableProxy()
-                let launchResult = try AppProxyLauncher.relaunchSelectedApps(
-                    rules: appRules,
-                    host: SingboxConfigBuilder.localProxyHost,
-                    port: SingboxConfigBuilder.localProxyPort
-                )
                 stateQueue.sync {
-                    self.proxiedAppBundleIDs = launchResult.launchedBundleIDs
-                    self.unsupportedPerAppBundleIDs = launchResult.unsupportedBundleIDs
+                    self.proxiedAppBundleIDs = []
+                    self.unsupportedPerAppBundleIDs = []
                 }
             }
             stateQueue.sync {
@@ -181,10 +181,6 @@ public final class SingboxRuntime: @unchecked Sendable {
             return statusSnapshot()
         } catch {
             process.terminate()
-            let proxiedApps = stateQueue.sync { self.proxiedAppBundleIDs }
-            if !proxiedApps.isEmpty {
-                try? AppProxyLauncher.relaunchAppsWithoutProxy(bundleIdentifiers: proxiedApps)
-            }
             try? proxyController.disableProxy()
             stateQueue.sync {
                 self.connecting = false
@@ -196,7 +192,14 @@ public final class SingboxRuntime: @unchecked Sendable {
     }
 
     public func stopIfNeeded() throws {
-        let (process, elevatedPID, proxiedApps) = stateQueue.sync { (self.process, self.elevatedPID, self.proxiedAppBundleIDs) }
+        try stopIfNeeded(cleanupStaleProcesses: false)
+    }
+
+    private func stopIfNeeded(cleanupStaleProcesses: Bool) throws {
+        let (process, elevatedPID, storedBinaryPath) = stateQueue.sync {
+            (self.process, self.elevatedPID, self.binaryPath)
+        }
+        let resolvedBinaryPath = storedBinaryPath ?? resolveBinaryPath()
         var cleanupErrors: [String] = []
 
         guard let process else {
@@ -207,9 +210,12 @@ public final class SingboxRuntime: @unchecked Sendable {
                     cleanupErrors.append(error.localizedDescription)
                 }
             }
-            if !proxiedApps.isEmpty {
+            stateQueue.sync {
+                self.elevatedPID = nil
+            }
+            if cleanupStaleProcesses, let resolvedBinaryPath {
                 do {
-                    try AppProxyLauncher.relaunchAppsWithoutProxy(bundleIdentifiers: proxiedApps)
+                    try cleanupStaleSingboxProcesses(binaryPath: resolvedBinaryPath)
                 } catch {
                     cleanupErrors.append(error.localizedDescription)
                 }
@@ -230,19 +236,19 @@ public final class SingboxRuntime: @unchecked Sendable {
             return
         }
 
-        if !proxiedApps.isEmpty {
-            do {
-                try AppProxyLauncher.relaunchAppsWithoutProxy(bundleIdentifiers: proxiedApps)
-            } catch {
-                cleanupErrors.append(error.localizedDescription)
-            }
-        }
         do {
             try proxyController.disableProxy()
         } catch {
             cleanupErrors.append(error.localizedDescription)
         }
         process.terminate()
+        if cleanupStaleProcesses, let resolvedBinaryPath {
+            do {
+                try cleanupStaleSingboxProcesses(binaryPath: resolvedBinaryPath)
+            } catch {
+                cleanupErrors.append(error.localizedDescription)
+            }
+        }
         stateQueue.sync {
             self.process = nil
             self.elevatedPID = nil
@@ -308,7 +314,16 @@ public final class SingboxRuntime: @unchecked Sendable {
     }
 
     private func launchElevatedSingbox(binaryPath: String, configPath: String, logPath: String) throws -> Int32 {
-        let command = [
+        let stalePIDs = staleSingboxPIDs(binaryPath: binaryPath)
+        var commands: [String] = []
+        if !stalePIDs.isEmpty {
+            let pidList = stalePIDs.map(String.init).joined(separator: " ")
+            commands.append("kill -TERM \(pidList) 2>/dev/null || true")
+            commands.append("sleep 0.5")
+            commands.append("kill -KILL \(pidList) 2>/dev/null || true")
+        }
+
+        commands.append([
             shellQuote(binaryPath),
             "run",
             "-c",
@@ -319,7 +334,9 @@ public final class SingboxRuntime: @unchecked Sendable {
             "2>&1",
             "&",
             "echo $!"
-        ].joined(separator: " ")
+        ].joined(separator: " "))
+
+        let command = commands.joined(separator: "; ")
         let output = try runAdministratorShell(command)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -342,6 +359,70 @@ public final class SingboxRuntime: @unchecked Sendable {
 
         if isPIDRunning(pid) {
             _ = try runAdministratorShell("kill -KILL \(pid)")
+        }
+    }
+
+    private func cleanupStaleSingboxProcesses(binaryPath: String) throws {
+        let pids = staleSingboxPIDs(binaryPath: binaryPath)
+        guard !pids.isEmpty else {
+            return
+        }
+
+        let pidList = pids.map(String.init).joined(separator: " ")
+        _ = try? runAdministratorShell("kill -TERM \(pidList)")
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let survivors = pids.filter { isPIDRunning($0) }
+        guard !survivors.isEmpty else {
+            return
+        }
+
+        let survivorList = survivors.map(String.init).joined(separator: " ")
+        _ = try runAdministratorShell("kill -KILL \(survivorList)")
+    }
+
+    private func staleSingboxPIDs(binaryPath: String) -> [Int32] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-axo", "pid=,command="]
+
+        let stdout = Pipe()
+        process.standardOutput = stdout
+
+        do {
+            try process.run()
+        } catch {
+            return []
+        }
+
+        let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            return []
+        }
+
+        let currentElevatedPID = stateQueue.sync { self.elevatedPID }
+        let currentProcessPID = stateQueue.sync { self.process?.processIdentifier }
+        let output = String(decoding: outputData, as: UTF8.self)
+
+        return output.split(separator: "\n").compactMap { line -> Int32? in
+            let trimmed = String(line).trimmingCharacters(in: .whitespaces)
+            guard let separatorIndex = trimmed.firstIndex(where: { $0.isWhitespace }) else {
+                return nil
+            }
+
+            let pidText = trimmed[..<separatorIndex]
+            let command = trimmed[separatorIndex...].trimmingCharacters(in: .whitespaces)
+            guard let pid = Int32(pidText),
+                  pid != currentElevatedPID,
+                  pid != currentProcessPID,
+                  command.contains(binaryPath),
+                  command.contains("/v2dex-runtime/sing-box-") else {
+                return nil
+            }
+
+            return pid
         }
     }
 
@@ -402,7 +483,7 @@ public final class SingboxRuntime: @unchecked Sendable {
 
         let logTail = recentOutput(limit: 20).joined(separator: "\n")
         throw SingboxRuntimeError.proxyStartupFailed(
-            reason: logTail.isEmpty ? "Timed out waiting for the local proxy listener on 127.0.0.1:2080." : logTail
+            reason: logTail.isEmpty ? "Timed out waiting for the local proxy listener on 127.0.0.1:\(SingboxConfigBuilder.localProxyPort)." : logTail
         )
     }
 
@@ -427,7 +508,7 @@ public final class SingboxRuntime: @unchecked Sendable {
 
         let logTail = readLogTail(path: logPath)
         throw SingboxRuntimeError.proxyStartupFailed(
-            reason: logTail.isEmpty ? "Timed out waiting for elevated sing-box on 127.0.0.1:2080." : logTail
+            reason: logTail.isEmpty ? "Timed out waiting for elevated sing-box on 127.0.0.1:\(SingboxConfigBuilder.localProxyPort)." : logTail
         )
     }
 
@@ -454,7 +535,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             "-z",
             "-G",
             "1",
-            SingboxConfigBuilder.localProxyHost,
+            SingboxConfigBuilder.loopbackProxyHost,
             String(SingboxConfigBuilder.localProxyPort)
         ]
 

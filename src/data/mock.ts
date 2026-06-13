@@ -68,5 +68,5 @@ export const mockTunnelStatus: TunnelStatus = {
   backend: 'system-proxy',
   dnsLeakProtection: true,
   proxyHost: '127.0.0.1',
-  proxyPort: 2080
+  proxyPort: 2081
 };

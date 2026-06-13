@@ -36,7 +36,7 @@ function parseVlessUri(uri: string): ProxyNode {
 
   return {
     id: `node-${compactId}`,
-    name: decodeURIComponent(parsed.hash.replace(/^#/, '')) || `VLESS ${parsed.hostname}`,
+    name: decodePercentEncodingRepeatedly(parsed.hash.replace(/^#/, '')) || `VLESS ${parsed.hostname}`,
     protocol: 'vless',
     server: parsed.hostname,
     port: Number(parsed.port || 443),
@@ -61,7 +61,7 @@ function parseHysteria2Uri(uri: string): ProxyNode {
   const alpn = parsed.searchParams.get('alpn')?.split(',').map(item => item.trim()).filter(Boolean);
   return {
     id: `node-${hashString(uri)}`,
-    name: decodeURIComponent(parsed.hash.replace(/^#/, '')) || `Hysteria2 ${parsed.hostname}`,
+    name: decodePercentEncodingRepeatedly(parsed.hash.replace(/^#/, '')) || `Hysteria2 ${parsed.hostname}`,
     protocol: 'hysteria2',
     server: parsed.hostname,
     port: Number(parsed.port || 443),
@@ -79,7 +79,7 @@ function parseTuicUri(uri: string): ProxyNode {
   const alpn = parsed.searchParams.get('alpn')?.split(',').map(item => item.trim()).filter(Boolean);
   return {
     id: `node-${hashString(uri)}`,
-    name: decodeURIComponent(parsed.hash.replace(/^#/, '')) || `TUIC ${parsed.hostname}`,
+    name: decodePercentEncodingRepeatedly(parsed.hash.replace(/^#/, '')) || `TUIC ${parsed.hostname}`,
     protocol: 'tuic',
     server: parsed.hostname,
     port: Number(parsed.port || 443),
@@ -97,6 +97,24 @@ function hashString(value: string) {
   return Array.from(value)
     .reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) >>> 0, 7)
     .toString(16);
+}
+
+function decodePercentEncodingRepeatedly(value: string) {
+  let decoded = value;
+
+  for (let index = 0; index < 5; index += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) {
+        return decoded;
+      }
+      decoded = next;
+    } catch {
+      return decoded;
+    }
+  }
+
+  return decoded;
 }
 
 export function importProfileFromRaw(sourceValue: string): SubscriptionProfile {

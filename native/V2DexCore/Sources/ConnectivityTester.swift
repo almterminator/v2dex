@@ -2,6 +2,67 @@ import Foundation
 import Network
 
 public enum ConnectivityTester {
+    public static func testProxyHTTPProbe(
+        to node: ProxyNode,
+        binaryPath explicitBinaryPath: String? = nil,
+        timeout: TimeInterval = 20
+    ) async throws -> TunnelHTTPProbeResult {
+        guard let binaryPath = SingboxRuntime.shared.resolveBinaryPath(explicitPath: explicitBinaryPath) else {
+            throw SingboxRuntimeError.binaryNotFound(environmentKey: "V2DEX_SINGBOX_PATH")
+        }
+
+        let proxyPort = randomLocalPort()
+        let configData = try buildProbeConfig(node: node, proxyPort: proxyPort)
+        let configURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("v2dex-probe-\(UUID().uuidString).json")
+        try configData.write(to: configURL, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let process = Process()
+        let output = Pipe()
+        let errorOutput = Pipe()
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = ["run", "-c", configURL.path]
+        process.standardOutput = output
+        process.standardError = errorOutput
+        defer {
+            if process.isRunning {
+                process.terminate()
+                process.waitUntilExit()
+            }
+        }
+
+        do {
+            try process.run()
+            try await waitForTCPPort(host: SingboxConfigBuilder.loopbackProxyHost, port: proxyPort)
+
+            var lastError: Error?
+            for url in probeURLs {
+                do {
+                    return try await testHTTPViaLocalProxy(
+                        url: url,
+                        proxyHost: SingboxConfigBuilder.loopbackProxyHost,
+                        proxyPort: proxyPort,
+                        timeout: timeout
+                    )
+                } catch {
+                    lastError = error
+                }
+            }
+
+            throw lastError ?? TestError.timeout
+        } catch {
+            if !process.isRunning {
+                let stderr = String(decoding: errorOutput.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !stderr.isEmpty {
+                    throw TestError.commandFailed(stderr)
+                }
+            }
+            throw error
+        }
+    }
+
     public static func testTCPConnection(to node: ProxyNode, timeout: TimeInterval = 6) async throws -> Int {
         let startedAt = Date()
         let port = NWEndpoint.Port(integerLiteral: UInt16(node.port))
@@ -131,6 +192,66 @@ public enum ConnectivityTester {
                 continuation.resume(throwing: TestError.timeout)
             }
         }
+    }
+
+    private static let probeURLs = [
+        "https://www.youtube.com/generate_204",
+        "https://www.google.com/generate_204",
+        "https://cp.cloudflare.com/generate_204",
+        "http://cp.cloudflare.com/generate_204"
+    ]
+
+    private static func randomLocalPort() -> Int {
+        Int.random(in: 25000...45000)
+    }
+
+    private static func buildProbeConfig(node: ProxyNode, proxyPort: Int) throws -> Data {
+        let data = try SingboxConfigBuilder.build(node: node, mode: .full, appRules: [])
+        guard var config = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return data
+        }
+
+        config["inbounds"] = [
+            [
+                "type": "mixed",
+                "tag": "mixed-in",
+                "listen": SingboxConfigBuilder.loopbackProxyHost,
+                "listen_port": proxyPort,
+                "set_system_proxy": false
+            ]
+        ]
+
+        return try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    private static func waitForTCPPort(host: String, port: Int, timeout: TimeInterval = 6) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        var lastError: Error?
+
+        while Date() < deadline {
+            do {
+                _ = try await testTCPConnection(
+                    to: ProxyNode(
+                        id: "probe",
+                        name: "Probe",
+                        protocolType: "tcp",
+                        server: host,
+                        port: port,
+                        security: nil,
+                        transport: nil,
+                        sni: nil,
+                        path: nil
+                    ),
+                    timeout: 1
+                )
+                return
+            } catch {
+                lastError = error
+                try await Task.sleep(nanoseconds: 150_000_000)
+            }
+        }
+
+        throw lastError ?? TestError.timeout
     }
 
     enum TestError: LocalizedError {

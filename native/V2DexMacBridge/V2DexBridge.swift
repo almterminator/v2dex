@@ -99,8 +99,13 @@ final class V2DexBridge: NSObject {
             let node = try JSONDecoder().decode(ProxyNode.self, from: Data(nodeJson.utf8))
             Task {
                 do {
-                    let latency = try await ConnectivityTester.testTCPConnection(to: node)
-                    resolve(["message": "Server reachable in \(latency)ms.", "latencyMs": latency])
+                    let result = try await ConnectivityTester.testProxyHTTPProbe(to: node)
+                    let host = URL(string: result.url)?.host ?? result.url
+                    resolve([
+                        "message": "Reached \(host) through config in \(result.latencyMs)ms.",
+                        "latencyMs": result.latencyMs,
+                        "url": result.url
+                    ])
                 } catch {
                     reject("server_test_failed", error.localizedDescription, error)
                 }
@@ -116,7 +121,7 @@ final class V2DexBridge: NSObject {
             do {
                 let result = try await ConnectivityTester.testHTTPViaLocalProxy(
                     url: url.trimmingCharacters(in: .whitespacesAndNewlines),
-                    proxyHost: SingboxConfigBuilder.localProxyHost,
+                    proxyHost: SingboxConfigBuilder.loopbackProxyHost,
                     proxyPort: SingboxConfigBuilder.localProxyPort
                 )
                 let host = URL(string: result.url)?.host ?? result.url
@@ -144,7 +149,7 @@ final class V2DexBridge: NSObject {
                 do {
                     let payload = try await ConnectivityTester.fetchTextViaLocalProxy(
                         url: endpoint,
-                        proxyHost: SingboxConfigBuilder.localProxyHost,
+                        proxyHost: SingboxConfigBuilder.loopbackProxyHost,
                         proxyPort: SingboxConfigBuilder.localProxyPort
                     )
                     if let object = try parseIpInfoPayload(payload) {

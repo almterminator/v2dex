@@ -4,18 +4,19 @@ interface BuildOptions {
   node: ProxyNode;
   mode: TunnelMode;
   appRules: AppRouteRule[];
+  localProxyPort?: number;
 }
 
-export function buildSingboxConfig({node, mode, appRules}: BuildOptions) {
-  const ruleSet = mode === 'per-app' ? buildPerAppRuleSet(appRules) : [];
-  const useTun = mode === 'full' || (mode === 'per-app' && requiresTun(appRules));
-  const finalOutbound = mode === 'per-app' && useTun ? 'direct' : 'proxy';
+export function buildSingboxConfig({node, mode, appRules, localProxyPort = 2081}: BuildOptions) {
+  const useTun = requiresTun(appRules);
+  const ruleSet = buildRuleSet(mode, appRules, useTun);
+  const finalOutbound = useTun ? 'direct' : 'proxy';
 
   return {
     log: {
       level: 'info'
     },
-    inbounds: buildInbounds(useTun),
+    inbounds: buildInbounds(useTun, localProxyPort),
     outbounds: [
       buildProxyOutbound(node),
       {
@@ -32,14 +33,10 @@ export function buildSingboxConfig({node, mode, appRules}: BuildOptions) {
 }
 
 function requiresTun(appRules: AppRouteRule[]) {
-  return appRules.some(
-    rule =>
-      rule.enabled &&
-      (rule.bundleId === 'ru.keepcoder.Telegram' || rule.bundleId === 'com.tdesktop.Telegram'),
-  );
+  return false;
 }
 
-function buildInbounds(useTun: boolean) {
+function buildInbounds(useTun: boolean, localProxyPort: number) {
   const inbounds = [];
 
   if (useTun) {
@@ -56,18 +53,35 @@ function buildInbounds(useTun: boolean) {
   inbounds.push({
     type: 'mixed',
     tag: 'mixed-in',
-    listen: '127.0.0.1',
-    listen_port: 2080,
+    listen: '0.0.0.0',
+    listen_port: localProxyPort,
     set_system_proxy: false
   });
 
   return inbounds;
 }
 
-function buildPerAppRuleSet(appRules: AppRouteRule[]) {
+function buildRuleSet(mode: TunnelMode, appRules: AppRouteRule[], useTun: boolean) {
   const rules = [];
 
-  for (const rule of appRules.filter(item => item.enabled)) {
+  if (useTun) {
+    rules.push({
+      inbound: ['mixed-in'],
+      outbound: 'proxy',
+    });
+  }
+
+  const selectedRules = appRules.filter(item => {
+    if (!item.enabled) {
+      return false;
+    }
+    if (mode === 'per-app') {
+      return true;
+    }
+    return isTelegramBundle(item.bundleId);
+  });
+
+  for (const rule of selectedRules) {
     const processNames = Array.from(new Set(expandProcessNames(rule)));
     if (processNames.length > 0) {
       rules.push({
@@ -86,6 +100,10 @@ function buildPerAppRuleSet(appRules: AppRouteRule[]) {
   }
 
   return rules;
+}
+
+function isTelegramBundle(bundleId: string) {
+  return bundleId === 'ru.keepcoder.Telegram' || bundleId === 'com.tdesktop.Telegram';
 }
 
 function expandProcessNames(rule: AppRouteRule) {
@@ -302,9 +320,14 @@ function buildProxyOutbound(node: ProxyNode) {
 
 function buildTransport(node: ProxyNode) {
   if (node.transport === 'ws') {
+    const wsPath = parseWebSocketPath(node.path ?? '/');
     return {
       type: 'ws',
-      path: node.path ?? '/',
+      path: wsPath.path,
+      max_early_data: wsPath.maxEarlyData,
+      early_data_header_name: wsPath.maxEarlyData
+        ? wsPath.earlyDataHeaderName ?? 'Sec-WebSocket-Protocol'
+        : undefined,
       headers: node.wsHost ? {Host: node.wsHost} : undefined
     };
   }
@@ -322,4 +345,32 @@ function buildTransport(node: ProxyNode) {
   }
 
   return undefined;
+}
+
+function parseWebSocketPath(rawPath: string) {
+  const normalizedPath = rawPath || '/';
+  const questionIndex = normalizedPath.indexOf('?');
+
+  if (questionIndex < 0) {
+    return {path: normalizedPath};
+  }
+
+  const basePath = normalizedPath.slice(0, questionIndex) || '/';
+  const params = new URLSearchParams(normalizedPath.slice(questionIndex + 1));
+  const maxEarlyData = Number(params.get('ed'));
+
+  if (!Number.isFinite(maxEarlyData) || maxEarlyData <= 0) {
+    return {path: normalizedPath};
+  }
+
+  const earlyDataHeaderName = params.get('eh') || undefined;
+  params.delete('ed');
+  params.delete('eh');
+  const remainingQuery = params.toString();
+
+  return {
+    path: remainingQuery ? `${basePath}?${remainingQuery}` : basePath,
+    maxEarlyData,
+    earlyDataHeaderName
+  };
 }

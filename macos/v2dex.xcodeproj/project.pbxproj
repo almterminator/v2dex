@@ -200,6 +200,7 @@
 				514201462437B4B30078DB4F /* Frameworks */,
 				514201472437B4B30078DB4F /* Resources */,
 				381D8A6E24576A4E00465D17 /* Bundle React Native code and images */,
+				9D4E2F1A8B7C4D36A5210E9F /* Bundle sing-box binary */,
 				78EE493D3478CD682AB49D0B /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
@@ -348,6 +349,26 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-v2dex-macOS/Pods-v2dex-macOS-resources.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		9D4E2F1A8B7C4D36A5210E9F /* Bundle sing-box binary */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../.local/bin/sing-box",
+			);
+			name = "Bundle sing-box binary";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/sing-box",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SINGBOX_BIN=\"${V2DEX_SINGBOX_PATH:-${SRCROOT}/../.local/bin/sing-box}\"\nTARGET_BIN=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/sing-box\"\nif [ -x \"$SINGBOX_BIN\" ]; then\n  mkdir -p \"$(dirname \"$TARGET_BIN\")\"\n  cp \"$SINGBOX_BIN\" \"$TARGET_BIN\"\n  chmod 755 \"$TARGET_BIN\"\nelse\n  echo \"warning: sing-box binary was not bundled. Set V2DEX_SINGBOX_PATH or place it at ${SRCROOT}/../.local/bin/sing-box\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

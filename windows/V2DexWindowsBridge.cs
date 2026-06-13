@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -47,23 +48,25 @@ namespace V2Dex.Windows
 
         public Task<string> ImportFromUri(string uri)
         {
-            var nodes = new[]
+            var nodeUris = ExtractNodeUris(uri);
+            var nodes = nodeUris.Select(ParseNodeUri).Where(node => node != null).ToArray();
+
+            if (nodes.Length == 0)
             {
-                new Dictionary<string, object?>
-                {
-                    ["id"] = Guid.NewGuid().ToString("N"),
-                    ["name"] = "Imported URI",
-                    ["protocol"] = uri.StartsWith("vless://", StringComparison.OrdinalIgnoreCase) ? "vless" : "unknown",
-                    ["server"] = "pending.windows.backend",
-                    ["port"] = 443
-                }
-            };
+                throw new NotSupportedException("No supported configs were found.");
+            }
+
             var result = new Dictionary<string, object?>
             {
                 ["nodes"] = nodes
             };
 
             return Task.FromResult(JsonSerializer.Serialize(result));
+        }
+
+        public Task<TunnelHttpLatencyResult> TestServerConnection(string nodeJson)
+        {
+            return runtime.TestServerConnectionAsync(nodeJson);
         }
 
         public Task<IReadOnlyList<AppRouteRule>> DiscoverInstalledApplications()
@@ -116,6 +119,109 @@ namespace V2Dex.Windows
         public Task<string> ScanQrFromGallery()
         {
             throw new NotSupportedException("QR gallery scanning is unavailable on Windows.");
+        }
+
+        private static IEnumerable<string> ExtractNodeUris(string source)
+        {
+            return source
+                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(value => value.StartsWith("vless://", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static Dictionary<string, object?>? ParseNodeUri(string uri)
+        {
+            if (uri.StartsWith("vless://", StringComparison.OrdinalIgnoreCase))
+            {
+                return ParseVlessUri(uri);
+            }
+
+            return null;
+        }
+
+        private static Dictionary<string, object?> ParseVlessUri(string raw)
+        {
+            var parsed = new Uri(raw);
+            var query = ParseQuery(parsed.Query);
+            var wsHost = Read(query, "host");
+            var name = DecodePercentEncodingRepeatedly(parsed.Fragment.TrimStart('#'));
+            var alpn = Read(query, "alpn")
+                ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(value => value.Length > 0)
+                .ToArray();
+
+            return new Dictionary<string, object?>
+            {
+                ["id"] = $"node-{HashString(raw)}",
+                ["name"] = name.Length > 0 ? name : $"VLESS {parsed.Host}",
+                ["protocol"] = "vless",
+                ["server"] = parsed.Host,
+                ["port"] = parsed.IsDefaultPort ? 443 : parsed.Port,
+                ["security"] = Read(query, "security") ?? "none",
+                ["transport"] = Read(query, "type") ?? "tcp",
+                ["path"] = Read(query, "path") ?? "/",
+                ["sni"] = Read(query, "sni") ?? wsHost,
+                ["wsHost"] = wsHost,
+                ["flow"] = Read(query, "flow"),
+                ["uuid"] = DecodePercentEncodingRepeatedly(parsed.UserInfo),
+                ["allowInsecure"] = IsTrue(Read(query, "allowInsecure")),
+                ["publicKey"] = Read(query, "pbk") ?? Read(query, "publicKey"),
+                ["shortId"] = Read(query, "sid") ?? Read(query, "shortId"),
+                ["fingerprint"] = Read(query, "fp") ?? Read(query, "fingerprint"),
+                ["alpn"] = alpn is { Length: > 0 } ? alpn : null,
+                ["rawUri"] = raw
+            };
+        }
+
+        private static Dictionary<string, string> ParseQuery(string query)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var part in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var pieces = part.Split('=', 2);
+                result[DecodePercentEncodingRepeatedly(pieces[0])] =
+                    DecodePercentEncodingRepeatedly(pieces.Length > 1 ? pieces[1] : "");
+            }
+
+            return result;
+        }
+
+        private static string? Read(Dictionary<string, string> query, string key)
+        {
+            return query.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+        }
+
+        private static bool IsTrue(string? value)
+        {
+            return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string DecodePercentEncodingRepeatedly(string value)
+        {
+            var decoded = value;
+            for (var index = 0; index < 5; index += 1)
+            {
+                var next = Uri.UnescapeDataString(decoded);
+                if (next == decoded)
+                {
+                    return decoded;
+                }
+
+                decoded = next;
+            }
+
+            return decoded;
+        }
+
+        private static string HashString(string value)
+        {
+            var hash = 7;
+            foreach (var character in value)
+            {
+                hash = unchecked(hash * 31 + character);
+            }
+
+            return hash.ToString("x");
         }
     }
 }

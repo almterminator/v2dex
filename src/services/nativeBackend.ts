@@ -117,6 +117,29 @@ export async function testServerConnection(node: ProxyNode) {
     throw new Error(getDesktopBridgeIssue() ?? 'Native bridge is unavailable on this platform.');
   }
 
+  if (Platform.OS === 'android') {
+    const probePort = 44000 + Math.floor(Math.random() * 1000);
+    return bridge.testServerConnection(JSON.stringify({
+      node,
+      probePort,
+      probeConfigJson: JSON.stringify(buildXrayConfig({node, localSocksPort: probePort}), null, 2),
+    }));
+  }
+
+  if (Platform.OS === 'windows') {
+    const probePort = 45000 + Math.floor(Math.random() * 1000);
+    return bridge.testServerConnection(JSON.stringify({
+      node,
+      probePort,
+      probeConfigJson: JSON.stringify(buildSingboxConfig({
+        node,
+        mode: 'full',
+        appRules: [],
+        localProxyPort: probePort,
+      }), null, 2),
+    }));
+  }
+
   return bridge.testServerConnection(JSON.stringify(node));
 }
 
@@ -327,7 +350,7 @@ function decodeUtf8Binary(binary: string) {
 
 function parseRemainingBytesFromUri(uri: string) {
   try {
-    const name = decodeURIComponent(new URL(uri).hash.replace(/^#/, ''));
+    const name = decodePercentEncodingRepeatedly(new URL(uri).hash.replace(/^#/, ''));
     const match = name.match(/(\d+(?:\.\d+)?)\s*(TB|GB|MB|KB|B)/i);
     if (!match) {
       return undefined;
@@ -350,4 +373,22 @@ function parseRemainingBytesFromUri(uri: string) {
   } catch {
     return undefined;
   }
+}
+
+function decodePercentEncodingRepeatedly(value: string) {
+  let decoded = value;
+
+  for (let index = 0; index < 5; index += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) {
+        return decoded;
+      }
+      decoded = next;
+    } catch {
+      return decoded;
+    }
+  }
+
+  return decoded;
 }

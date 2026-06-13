@@ -94,7 +94,7 @@ public enum SubscriptionImporter {
 
         let host = components.host ?? "localhost"
         let port = components.port ?? 443
-        let fragment = components.fragment?.removingPercentEncoding
+        let fragment = decodePercentEncodingRepeatedly(components.fragment)
         let queryItems = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { item in
             (item.name, item.value ?? "")
         })
@@ -182,7 +182,7 @@ public enum SubscriptionImporter {
         let queryItems = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         return ProxyNode(
             id: stableNodeID(from: raw),
-            name: components.fragment?.removingPercentEncoding ?? "Hysteria2 \(components.host ?? "server")",
+            name: decodePercentEncodingRepeatedly(components.fragment) ?? "Hysteria2 \(components.host ?? "server")",
             protocolType: "hysteria2",
             server: components.host ?? "localhost",
             port: components.port ?? 443,
@@ -204,7 +204,7 @@ public enum SubscriptionImporter {
         let queryItems = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         return ProxyNode(
             id: stableNodeID(from: raw),
-            name: components.fragment?.removingPercentEncoding ?? "TUIC \(components.host ?? "server")",
+            name: decodePercentEncodingRepeatedly(components.fragment) ?? "TUIC \(components.host ?? "server")",
             protocolType: "tuic",
             server: components.host ?? "localhost",
             port: components.port ?? 443,
@@ -228,7 +228,7 @@ public enum SubscriptionImporter {
         let transport = queryItems["type"]
         return ProxyNode(
             id: stableNodeID(from: raw),
-            name: components.fragment?.removingPercentEncoding ?? "Trojan \(components.host ?? "server")",
+            name: decodePercentEncodingRepeatedly(components.fragment) ?? "Trojan \(components.host ?? "server")",
             protocolType: "trojan",
             server: components.host ?? "localhost",
             port: components.port ?? 443,
@@ -303,6 +303,21 @@ public enum SubscriptionImporter {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts
+    }
+
+    private static func decodePercentEncodingRepeatedly(_ value: String?) -> String? {
+        guard var decoded = value else {
+            return nil
+        }
+
+        for _ in 0..<5 {
+            guard let next = decoded.removingPercentEncoding, next != decoded else {
+                return decoded
+            }
+            decoded = next
+        }
+
+        return decoded
     }
 
     private static func stableNodeID(from raw: String) -> String {

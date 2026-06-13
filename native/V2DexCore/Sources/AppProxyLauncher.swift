@@ -17,6 +17,11 @@ enum AppProxyLauncher {
         "ru.keepcoder.Telegram",
         "com.tdesktop.Telegram"
     ]
+    private static let fullModeRelaunchBundleIDs: Set<String> = [
+        "com.google.Chrome",
+        "ru.keepcoder.Telegram",
+        "com.tdesktop.Telegram"
+    ]
 
     static func relaunchSelectedApps(
         rules: [AppRouteRule],
@@ -91,6 +96,40 @@ enum AppProxyLauncher {
         return AppProxyLaunchResult(
             launchedBundleIDs: launchedBundleIDs,
             unsupportedBundleIDs: []
+        )
+    }
+
+    static func relaunchRunningFullModeApps(
+        rules: [AppRouteRule],
+        host: String,
+        port: Int
+    ) throws -> AppProxyLaunchResult {
+        let bundleIDs = rules
+            .filter { $0.enabled && fullModeRelaunchBundleIDs.contains($0.bundleId) }
+            .map(\.bundleId)
+
+        var launchedBundleIDs: [String] = []
+        var unsupportedBundleIDs: [String] = []
+
+        for bundleID in bundleIDs where isRunning(bundleIdentifier: bundleID) {
+            guard supportsProxyArgument(bundleIdentifier: bundleID) else {
+                unsupportedBundleIDs.append(bundleID)
+                continue
+            }
+
+            try terminateRunningApps(bundleIdentifier: bundleID)
+            try launchApp(
+                bundleIdentifier: bundleID,
+                arguments: proxyArguments(host: host, port: port, bundleIdentifier: bundleID),
+                proxyHost: host,
+                proxyPort: port
+            )
+            launchedBundleIDs.append(bundleID)
+        }
+
+        return AppProxyLaunchResult(
+            launchedBundleIDs: launchedBundleIDs,
+            unsupportedBundleIDs: unsupportedBundleIDs
         )
     }
 
@@ -292,11 +331,13 @@ enum AppProxyLauncher {
             return []
         }
 
-        var arguments = ["--proxy-server=http://\(host):\(port)"]
         if isChromiumFamily(bundleIdentifier: bundleIdentifier) {
+            var arguments = ["--proxy-server=socks5://\(host):\(port)"]
             arguments.append(contentsOf: chromiumProxyArguments)
+            return arguments
         }
-        return arguments
+
+        return ["--proxy-server=http://\(host):\(port)"]
     }
 
     private static func isChromiumFamily(bundleIdentifier: String) -> Bool {

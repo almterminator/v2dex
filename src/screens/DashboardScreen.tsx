@@ -1,7 +1,9 @@
 import React from 'react';
 import {
   Alert,
+  GestureResponderEvent,
   Image,
+  LayoutChangeEvent,
   Modal,
   Platform,
   TextInput,
@@ -16,7 +18,7 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {AppGradient} from '../components/AppGradient';
 import {GlassCard} from '../components/GlassCard';
-import {Sidebar} from '../components/Sidebar';
+import {Sidebar, SidebarItem} from '../components/Sidebar';
 import {StatPill} from '../components/StatPill';
 import {buildManualProfile} from '../services/configParser';
 import {colors, radii, spacing} from '../theme/tokens';
@@ -90,7 +92,24 @@ export function DashboardScreen() {
   const [pingingAll, setPingingAll] = React.useState(false);
   const [appSearchQuery, setAppSearchQuery] = React.useState('');
   const [profilePingResults, setProfilePingResults] = React.useState<Record<string, number | 'TO'> | null>(null);
+  const [activeSidebarItem, setActiveSidebarItem] = React.useState<SidebarItem>('overview');
+  const [contentScrollY, setContentScrollY] = React.useState(0);
+  const [savedConfigsHeaderFrame, setSavedConfigsHeaderFrame] = React.useState<{
+    x: number;
+    y: number;
+    width: number;
+  } | null>(null);
+  const [savedConfigsSectionY, setSavedConfigsSectionY] = React.useState(0);
   const clearPingResultsRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectActionGuardRef = React.useRef(0);
+  const contentScrollRef = React.useRef<ScrollView>(null);
+  const sectionOffsetsRef = React.useRef<Record<SidebarItem, number>>({
+    overview: 0,
+    routing: 0,
+    subscriptions: 0,
+    latency: 0,
+    settings: 0,
+  });
   const statusColor = tunnel.connecting ? colors.danger : tunnel.connected ? colors.success : colors.info;
   const statusTintSoft = withAlpha(statusColor, 0.1);
   const statusTint = withAlpha(statusColor, 0.14);
@@ -229,6 +248,21 @@ export function DashboardScreen() {
     }
   }, [importQrFromCamera, t]);
 
+  const handleConnectToggle = React.useCallback(() => {
+    const now = Date.now();
+    if (now - connectActionGuardRef.current < 500) {
+      return;
+    }
+    connectActionGuardRef.current = now;
+
+    if (tunnel.connected) {
+      void disconnect();
+      return;
+    }
+
+    void connect();
+  }, [connect, disconnect, tunnel.connected]);
+
   const handleRoutingModeToggle = React.useCallback(
     async (enabled: boolean) => {
       const nextMode: 'per-app' | 'full' = enabled ? 'per-app' : 'full';
@@ -309,11 +343,66 @@ export function DashboardScreen() {
   const handleCopyLocalProxyCommand = React.useCallback(async () => {
     try {
       await copyLocalProxyCommand(socksHost, socksPort);
-      Alert.alert(t('copied'), t('autosshCopied'));
+      Alert.alert(t('copied'), t('localProxyCopied'));
     } catch (error) {
       Alert.alert(t('operationFailed'), error instanceof Error ? error.message : t('unknownError'));
     }
   }, [copyLocalProxyCommand, socksHost, socksPort, t]);
+
+  const recordSectionOffset = React.useCallback(
+    (item: SidebarItem) => (event: LayoutChangeEvent) => {
+      sectionOffsetsRef.current[item] = event.nativeEvent.layout.y;
+    },
+    [],
+  );
+
+  const handleSidebarSelect = React.useCallback((item: SidebarItem) => {
+    setActiveSidebarItem(item);
+    contentScrollRef.current?.scrollTo({
+      y: Math.max(sectionOffsetsRef.current[item] - spacing.md, 0),
+      animated: true,
+    });
+  }, []);
+
+  const openImportDialog = React.useCallback(() => {
+    setImportDialogOpen(true);
+  }, []);
+
+  const savedConfigsAddFrame = React.useMemo(() => {
+    if (Platform.OS !== 'macos' || isCompact || !savedConfigsHeaderFrame) {
+      return null;
+    }
+
+    return {
+      left: spacing.xl + 220 + spacing.lg + savedConfigsHeaderFrame.x + savedConfigsHeaderFrame.width - 44,
+      top: spacing.xl + savedConfigsSectionY + savedConfigsHeaderFrame.y - contentScrollY,
+      width: 44,
+      height: 44,
+    };
+  }, [contentScrollY, isCompact, savedConfigsHeaderFrame, savedConfigsSectionY]);
+
+  const handleShellStartShouldSetResponderCapture = React.useCallback(
+    (event: GestureResponderEvent) => {
+      if (!savedConfigsAddFrame) {
+        return false;
+      }
+
+      const {locationX, locationY} = event.nativeEvent;
+      const insideAddButton =
+        locationX >= savedConfigsAddFrame.left &&
+        locationX <= savedConfigsAddFrame.left + savedConfigsAddFrame.width &&
+        locationY >= savedConfigsAddFrame.top &&
+        locationY <= savedConfigsAddFrame.top + savedConfigsAddFrame.height;
+
+      if (insideAddButton) {
+        openImportDialog();
+        return true;
+      }
+
+      return false;
+    },
+    [openImportDialog, savedConfigsAddFrame],
+  );
 
   const handleRenameSubmit = React.useCallback(async () => {
     if (!renameDialog) {
@@ -367,6 +456,50 @@ export function DashboardScreen() {
     t,
   ]);
 
+  const renderImportDialog = () => (
+    <View style={[styles.modalLayer, Platform.OS === 'macos' && styles.inPageModalLayer]}>
+      <Pressable style={styles.modalBackdrop} onPress={() => setImportDialogOpen(false)} />
+      <View style={styles.modalCard}>
+        <Text style={[styles.modalTitle, textDirectionStyle]}>{t('importProfile')}</Text>
+        <TextInput
+          placeholder={t('importPlaceholder')}
+          placeholderTextColor="rgba(244,247,249,0.40)"
+          style={[styles.input, textDirectionStyle]}
+          value={importDraft}
+          onChangeText={setImportDraft}
+          autoCapitalize="none"
+          multiline
+        />
+        <View style={styles.importOptionRow}>
+          <Pressable
+            onPress={() => {
+              setImportDialogOpen(false);
+              setManualDialogOpen(true);
+            }}
+            style={styles.importOptionButton}>
+            <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>{t('manual')}</Text>
+          </Pressable>
+          <Pressable onPress={() => void handleClipboardImport()} style={styles.importOptionButton}>
+            <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>{t('clipboard')}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel={t('scanQr')}
+            onPress={() => void handleQrCameraImport()}
+            style={styles.importIconButton}>
+            <Image
+              source={require('../assets/qrcode_white.png')}
+              style={styles.importIconImage}
+              resizeMode="contain"
+            />
+          </Pressable>
+        </View>
+        <Pressable onPress={() => void handleImportSubmit()} style={styles.importSubmitButton}>
+          <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>{t('import')}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
   return (
     <AppGradient
       colors={[colors.backgroundTop, colors.backgroundBottom]}
@@ -375,20 +508,18 @@ export function DashboardScreen() {
       <View style={[styles.glowB, {backgroundColor: statusTintSoft}]} />
 
       <View
+        onStartShouldSetResponderCapture={handleShellStartShouldSetResponderCapture}
         style={[
           styles.shell,
           isCompact && styles.shellCompact,
           isCompact && {paddingTop: spacing.md + insets.top},
         ]}>
-        {!isCompact ? (
-          <Sidebar
-            language={language}
-            onToggleLanguage={() => setLanguage(current => (current === 'en' ? 'fa' : 'en'))}
-          />
-        ) : null}
-
         <ScrollView
-          style={styles.contentScroll}
+          ref={contentScrollRef}
+          style={[styles.contentScroll, !isCompact && styles.contentScrollDesktop]}
+          keyboardShouldPersistTaps="handled"
+          onScroll={event => setContentScrollY(event.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
           contentContainerStyle={[
             styles.content,
             isCompact && styles.contentCompact,
@@ -410,17 +541,20 @@ export function DashboardScreen() {
                   {activeProfile?.title ?? t('noConfigSelected')}
                 </Text>
               </View>
-              <Pressable
+              <View
                 accessibilityRole="button"
                 accessibilityLabel={t('importProfile')}
-                onPress={() => setImportDialogOpen(true)}
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={openImportDialog}
                 style={[styles.addButton, {borderColor: statusBorder, backgroundColor: statusTint}]}>
                 <Text style={styles.addButtonText}>+</Text>
-              </Pressable>
+              </View>
             </View>
           ) : null}
 
-          <View style={[styles.heroRow, isCompact && styles.heroRowCompact]}>
+          <View
+            onLayout={recordSectionOffset('overview')}
+            style={[styles.heroRow, isCompact && styles.heroRowCompact]}>
             <GlassCard>
               <View style={styles.heroCard}>
                 <View style={[styles.heroHeader, isCompact && styles.heroHeaderCompact]}>
@@ -475,20 +609,22 @@ export function DashboardScreen() {
 
                 {!isCompact ? (
                   <View style={styles.ctaRow}>
-                    <Pressable
-                      onPress={() => {
-                        if (tunnel.connected) {
-                          void disconnect();
-                          return;
-                        }
-
-                        void connect();
-                      }}
-                      style={[styles.primaryButton, {backgroundColor: statusColor}]}>
-                      <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>
-                        {tunnel.connecting ? t('connectingEllipsis') : tunnel.connected ? t('disconnect') : t('connect')}
-                      </Text>
-                    </Pressable>
+                    {Platform.OS === 'macos' ? (
+                      <View style={styles.nativeConnectButtonSlot} />
+                    ) : (
+                      <View
+                        accessibilityRole="button"
+                        accessibilityLabel={tunnel.connected ? t('disconnect') : t('connect')}
+                        onStartShouldSetResponder={() => true}
+                        onResponderRelease={handleConnectToggle}
+                        onTouchStart={handleConnectToggle}
+                        {...macClickHandlers(handleConnectToggle)}
+                        style={[styles.primaryButton, {backgroundColor: statusColor}]}>
+                        <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>
+                          {tunnel.connecting ? t('connectingEllipsis') : tunnel.connected ? t('disconnect') : t('connect')}
+                        </Text>
+                      </View>
+                    )}
 
                     <Pressable
                       onPress={() => setMode(tunnel.mode === 'full' ? 'per-app' : 'full')}
@@ -507,107 +643,126 @@ export function DashboardScreen() {
             </GlassCard>
           </View>
 
-          <GlassCard>
-            <Text style={[styles.sectionTitle, textDirectionStyle]}>{t('savedConfigs')}</Text>
+          <View
+            onLayout={event => {
+              recordSectionOffset('subscriptions')(event);
+              setSavedConfigsSectionY(event.nativeEvent.layout.y);
+            }}>
+            <GlassCard>
+              <View
+                onLayout={event => {
+                  const {x, y, width} = event.nativeEvent.layout;
+                  setSavedConfigsHeaderFrame({x, y, width});
+                }}
+                style={[styles.savedConfigsHeader, isPersian && styles.savedConfigsHeaderRtl]}>
+                <Text style={[styles.sectionTitle, textDirectionStyle]}>{t('savedConfigs')}</Text>
+              </View>
 
-            <View style={styles.ruleList}>
-              {profiles.length === 0 ? (
-                <Text style={[styles.metaText, textDirectionStyle]}>{t('noImportedConfig')}</Text>
-              ) : (
-                profiles.map(profile => (
-                  <Pressable
-                    key={profile.id}
-                    onPress={() => selectProfile(profile.id)}
-                    onLongPress={event =>
-                      setContextMenu({
-                        kind: 'profile',
-                        profileId: profile.id,
-                        x: event.nativeEvent.pageX,
-                        y: event.nativeEvent.pageY,
-                      })
-                    }
-                    onPressIn={event => {
-                      if (isSecondaryClick(event.nativeEvent)) {
+              <View style={[styles.ruleList, styles.savedConfigsList]}>
+                {profiles.length === 0 ? (
+                  <Text style={[styles.metaText, textDirectionStyle]}>{t('noImportedConfig')}</Text>
+                ) : (
+                  profiles.map(profile => (
+                    <Pressable
+                      key={profile.id}
+                      onPress={() => selectProfile(profile.id)}
+                      onLongPress={event =>
                         setContextMenu({
                           kind: 'profile',
                           profileId: profile.id,
                           x: event.nativeEvent.pageX,
                           y: event.nativeEvent.pageY,
-                        });
-                        return;
+                        })
                       }
-                    }}
-                    style={[
-                      styles.profileRow,
-                      activeProfile?.id === profile.id && styles.profileRowActive,
-                      activeProfile?.id === profile.id && {
-                        borderColor: statusBorder,
-                        backgroundColor: statusTintSoft,
-                      },
-                    ]}>
-                    <View style={styles.profileMeta}>
-                      <Text style={[styles.ruleTitle, textDirectionStyle]}>{profile.title}</Text>
-                      <Text style={[styles.ruleMeta, textDirectionStyle]}>
-                        {translateProfileSource(profile.source, language)} · {profile.nodes.length} {profile.nodes.length > 1 ? t('nodes') : t('node')}
+                      onPressIn={event => {
+                        if (isSecondaryClick(event.nativeEvent)) {
+                          setContextMenu({
+                            kind: 'profile',
+                            profileId: profile.id,
+                            x: event.nativeEvent.pageX,
+                            y: event.nativeEvent.pageY,
+                          });
+                          return;
+                        }
+                      }}
+                      style={[
+                        styles.profileRow,
+                        activeProfile?.id === profile.id && styles.profileRowActive,
+                        activeProfile?.id === profile.id && {
+                          borderColor: statusBorder,
+                          backgroundColor: statusTintSoft,
+                        },
+                      ]}>
+                      <View style={styles.profileMeta}>
+                        <Text style={[styles.ruleTitle, textDirectionStyle]}>{profile.title}</Text>
+                        <Text style={[styles.ruleMeta, textDirectionStyle]}>
+                          {translateProfileSource(profile.source, language)} · {profile.nodes.length} {profile.nodes.length > 1 ? t('nodes') : t('node')}
+                        </Text>
+                      </View>
+                      <Text style={styles.profileStamp}>
+                        {formatProfileStamp(
+                          profile.id,
+                          profile.updatedAt,
+                          profilePingResults,
+                          profile.nodes[0]?.latencyMs,
+                        )}
                       </Text>
-                    </View>
-                    <Text style={styles.profileStamp}>
-                      {formatProfileStamp(
-                        profile.id,
-                        profile.updatedAt,
-                        profilePingResults,
-                        profile.nodes[0]?.latencyMs,
-                      )}
+                    </Pressable>
+                  ))
+                )}
+              </View>
+
+              {activeProfile ? (
+                <View style={styles.profileActionRow}>
+                  <Pressable
+                    onPress={() => void handlePingAllProfiles()}
+                    style={[styles.secondaryButtonCompact, styles.profilePingButton]}>
+                    <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>
+                      {pingingAll ? t('pingingAll') : t('pingAll')}
                     </Text>
                   </Pressable>
-                ))
-              )}
-            </View>
+                </View>
+              ) : null}
+            </GlassCard>
+          </View>
 
-            {activeProfile ? (
-              <View style={styles.profileActionRow}>
-                <Pressable
-                  onPress={() => void handlePingAllProfiles()}
-                  style={[styles.secondaryButtonCompact, styles.profilePingButton]}>
-                  <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>
-                    {pingingAll ? t('pingingAll') : t('pingAll')}
+          <View onLayout={event => {
+            recordSectionOffset('latency')(event);
+            recordSectionOffset('settings')(event);
+          }}>
+            <GlassCard>
+              <View style={[styles.proxyInfoRow, isCompact && styles.proxyInfoRowCompact]}>
+                <View style={styles.proxyInfoCopy}>
+                  <Text numberOfLines={1} style={[styles.sectionTitle, styles.proxyTitle, textDirectionStyle]}>
+                    {t('localSocksProxy')}
                   </Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </GlassCard>
-
-          <GlassCard>
-            <View style={[styles.proxyInfoRow, isCompact && styles.proxyInfoRowCompact]}>
-              <View style={styles.proxyInfoCopy}>
-                <Text numberOfLines={1} style={[styles.sectionTitle, styles.proxyTitle, textDirectionStyle]}>
-                  {t('localSocksProxy')}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  ellipsizeMode="clip"
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.72}
-                  style={[styles.proxyAddress, textDirectionStyle]}>
-                  {socksHost}:{socksPort}
-                </Text>
-              </View>
-              <View style={styles.proxyActionStack}>
-                <Pressable onPress={() => void handleCopyLocalProxyCommand()} style={styles.proxyCopyButton}>
-                  <Text style={[styles.proxyCopyText, isPersian && styles.rtlButtonText]}>{t('copy')}</Text>
-                </Pressable>
-                <View style={[styles.proxyStatusPill, tunnel.connected && styles.proxyStatusPillActive]}>
-                  <Text style={[styles.proxyStatusText, tunnel.connected && styles.proxyStatusTextActive, isPersian && styles.rtlButtonText]}>
-                    {tunnel.connected ? t('active') : t('standby')}
+                  <Text
+                    numberOfLines={1}
+                    ellipsizeMode="clip"
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.72}
+                    style={[styles.proxyAddress, textDirectionStyle]}>
+                    {socksHost}:{socksPort}
                   </Text>
                 </View>
+                <View style={styles.proxyActionStack}>
+                  <Pressable onPress={() => void handleCopyLocalProxyCommand()} style={styles.proxyCopyButton}>
+                    <Text style={[styles.proxyCopyText, isPersian && styles.rtlButtonText]}>{t('copy')}</Text>
+                  </Pressable>
+                  <View style={[styles.proxyStatusPill, tunnel.connected && styles.proxyStatusPillActive]}>
+                    <Text style={[styles.proxyStatusText, tunnel.connected && styles.proxyStatusTextActive, isPersian && styles.rtlButtonText]}>
+                      {tunnel.connected ? t('active') : t('standby')}
+                    </Text>
+                  </View>
+                </View>
               </View>
-            </View>
-          </GlassCard>
+            </GlassCard>
+          </View>
 
-          <GlassCard
-            style={tunnel.mode === 'per-app' ? styles.appRoutingCardActive : undefined}
-            innerStyle={tunnel.mode === 'per-app' ? styles.appRoutingCardInnerActive : undefined}>
+          <View onLayout={recordSectionOffset('routing')}>
+            <GlassCard
+              style={tunnel.mode === 'per-app' ? styles.appRoutingCardActive : undefined}
+              innerStyle={tunnel.mode === 'per-app' ? styles.appRoutingCardInnerActive : undefined}>
             <View style={[styles.sectionHeaderRow, isCompact && styles.sectionHeaderRowCompact]}>
               <View style={[styles.sectionHeaderCopy, isCompact && styles.sectionHeaderCopyCompact]}>
                 <View style={[styles.sectionTitleToggleRow, isPersian && styles.sectionTitleToggleRowRtl]}>
@@ -666,8 +821,40 @@ export function DashboardScreen() {
                 </View>
               ))}
             </View>
-          </GlassCard>
+            </GlassCard>
+          </View>
         </ScrollView>
+
+        {!isCompact ? (
+          <View pointerEvents="box-none" style={styles.sidebarLayer}>
+            <Sidebar
+              activeItem={activeSidebarItem}
+              language={language}
+              onAddConfig={openImportDialog}
+              onSelectItem={handleSidebarSelect}
+              onToggleLanguage={() => setLanguage(current => (current === 'en' ? 'fa' : 'en'))}
+            />
+            {savedConfigsAddFrame ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('importProfile')}
+                onPress={openImportDialog}
+                {...macImportClick(openImportDialog)}
+                style={({pressed}) => [
+                  styles.savedConfigsAddOverlay,
+                  {
+                    left: savedConfigsAddFrame.left - spacing.xl,
+                    top: savedConfigsAddFrame.top - spacing.xl,
+                    borderColor: statusBorder,
+                    backgroundColor: statusTint,
+                  },
+                  pressed && styles.buttonPressed,
+                ]}>
+                <Text style={styles.addButtonText}>+</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         {isCompact ? (
           <View style={[styles.fixedActionBar, {marginBottom: insets.bottom}]}>
@@ -771,49 +958,13 @@ export function DashboardScreen() {
           </View>
         </Modal>
 
-        <Modal transparent visible={importDialogOpen} animationType="fade" onRequestClose={() => setImportDialogOpen(false)}>
-          <View style={styles.modalLayer}>
-            <Pressable style={styles.modalBackdrop} onPress={() => setImportDialogOpen(false)} />
-            <View style={styles.modalCard}>
-              <Text style={[styles.modalTitle, textDirectionStyle]}>{t('importProfile')}</Text>
-              <TextInput
-                placeholder={t('importPlaceholder')}
-                placeholderTextColor="rgba(244,247,249,0.40)"
-                style={[styles.input, textDirectionStyle]}
-                value={importDraft}
-                onChangeText={setImportDraft}
-                autoCapitalize="none"
-                multiline
-              />
-              <View style={styles.importOptionRow}>
-                <Pressable
-                  onPress={() => {
-                    setImportDialogOpen(false);
-                    setManualDialogOpen(true);
-                  }}
-                  style={styles.importOptionButton}>
-                  <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>{t('manual')}</Text>
-                </Pressable>
-                <Pressable onPress={() => void handleClipboardImport()} style={styles.importOptionButton}>
-                  <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>{t('clipboard')}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityLabel={t('scanQr')}
-                  onPress={() => void handleQrCameraImport()}
-                  style={styles.importIconButton}>
-                  <Image
-                    source={require('../assets/qrcode_white.png')}
-                    style={styles.importIconImage}
-                    resizeMode="contain"
-                  />
-                </Pressable>
-              </View>
-              <Pressable onPress={() => void handleImportSubmit()} style={styles.importSubmitButton}>
-                <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>{t('import')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
+        {Platform.OS === 'macos' ? (
+          importDialogOpen ? renderImportDialog() : null
+        ) : (
+          <Modal transparent visible={importDialogOpen} animationType="fade" onRequestClose={() => setImportDialogOpen(false)}>
+            {renderImportDialog()}
+          </Modal>
+        )}
 
         <Modal transparent visible={manualDialogOpen} animationType="fade" onRequestClose={closeManualDialog}>
           <View style={styles.modalLayer}>
@@ -927,9 +1078,27 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
+  sidebarLayer: {
+    position: 'absolute',
+    left: spacing.xl,
+    right: spacing.xl,
+    top: spacing.xl,
+    bottom: spacing.xl,
+    zIndex: 30,
+    overflow: 'visible',
+  },
   contentScroll: {
     flex: 1,
-    minWidth: 0
+    minWidth: 0,
+    position: 'relative',
+    zIndex: 0,
+  },
+  contentScrollDesktop: {
+    position: 'absolute',
+    left: spacing.xl + 220 + spacing.lg,
+    right: spacing.xl,
+    top: spacing.xl,
+    bottom: spacing.xl,
   },
   content: {
     flexGrow: 1,
@@ -991,6 +1160,9 @@ const styles = StyleSheet.create({
     fontSize: 30,
     lineHeight: 34,
     fontWeight: '500',
+  },
+  buttonPressed: {
+    opacity: 0.82,
   },
   heroRow: {
     minHeight: 280
@@ -1124,6 +1296,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     includeFontPadding: false,
     textAlignVertical: 'center',
+  },
+  nativeConnectButtonSlot: {
+    minWidth: 180,
+    minHeight: 48,
   },
   secondaryButton: {
     borderWidth: 1,
@@ -1289,6 +1465,28 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12
   },
+  savedConfigsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  savedConfigsHeaderRtl: {
+    flexDirection: 'row-reverse',
+  },
+  savedConfigsList: {
+    marginTop: spacing.xl + spacing.xs,
+  },
+  savedConfigsAddOverlay: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 45,
+  },
   profileActionRow: {
     marginTop: spacing.lg,
     flexDirection: 'row',
@@ -1442,6 +1640,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.xl,
+  },
+  inPageModalLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 80,
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -1623,6 +1825,26 @@ function isSecondaryClick(event: unknown) {
   );
 }
 
+function macImportClick(handler: () => void) {
+  return Platform.OS === 'macos'
+    ? ({
+        onClick: handler,
+        onPointerDown: handler,
+        onPointerUp: handler,
+      } as Record<string, unknown>)
+    : {};
+}
+
+function macClickHandlers(handler: () => void) {
+  return Platform.OS === 'macos'
+    ? ({
+        onClick: handler,
+        onMouseDown: handler,
+        onPointerDown: handler,
+      } as Record<string, unknown>)
+    : {};
+}
+
 function pingColorStyle(pingMs?: number) {
   if (typeof pingMs !== 'number') {
     return {color: colors.textPrimary};
@@ -1779,7 +2001,7 @@ const translations = {
     connectionPing: 'Connection Ping',
     copied: 'Copied',
     copy: 'Copy',
-    autosshCopied: 'autossh command copied.',
+    localProxyCopied: 'Local proxy address copied.',
     delete: 'Delete',
     deleteConfig: 'Delete Config',
     disconnect: 'Disconnect',
@@ -1854,7 +2076,7 @@ const translations = {
     connectionPing: 'پینگ اتصال',
     copied: 'کپی شد',
     copy: 'کپی',
-    autosshCopied: 'دستور autossh کپی شد.',
+    localProxyCopied: 'آدرس پراکسی محلی کپی شد.',
     delete: 'حذف',
     deleteConfig: 'حذف کانفیگ',
     disconnect: 'قطع اتصال',

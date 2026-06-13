@@ -4,9 +4,10 @@ const LOCAL_SOCKS_PORT = 43080;
 
 interface BuildOptions {
   node: ProxyNode;
+  localSocksPort?: number;
 }
 
-export function buildXrayConfig({node}: BuildOptions) {
+export function buildXrayConfig({node, localSocksPort = LOCAL_SOCKS_PORT}: BuildOptions) {
   return {
     log: {
       loglevel: 'warning',
@@ -15,7 +16,7 @@ export function buildXrayConfig({node}: BuildOptions) {
       {
         tag: 'lan-socks',
         listen: '0.0.0.0',
-        port: LOCAL_SOCKS_PORT,
+        port: localSocksPort,
         protocol: 'socks',
         settings: {
           auth: 'noauth',

@@ -24,3 +24,6 @@ DerivedData
 *.xcuserdata
 ios/build
 macos/build
+macos/build-arm64
+.build-artifacts/windows-installer
+android/local.properties

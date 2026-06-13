@@ -29,9 +29,12 @@ import java.net.Proxy
 import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import java.util.zip.ZipFile
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -320,7 +323,19 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
   fun testServerConnection(nodeJson: String, promise: Promise) {
     Thread {
       try {
-        val node = JSONObject(nodeJson)
+        val payload = JSONObject(nodeJson)
+        val probeConfigJson = payload.optString("probeConfigJson", "")
+        if (probeConfigJson.isNotBlank()) {
+          val probePort = payload.optInt("probePort", 0).takeIf { it > 0 } ?: randomProbePort()
+          val latencyMs = testProxyProbe(probeConfigJson, probePort)
+          val result = Arguments.createMap()
+          result.putString("message", "Reached HTTP probe in ${latencyMs}ms")
+          result.putInt("latencyMs", latencyMs)
+          promise.resolve(result)
+          return@Thread
+        }
+
+        val node = payload
         val server = node.optString("server")
         val port = node.optInt("port")
         val startedAt = System.nanoTime()
@@ -339,6 +354,107 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
       }
     }.start()
   }
+
+  private fun testProxyProbe(configJson: String, proxyPort: Int): Int {
+    val runtimeDir = File(reactContext.filesDir, "xray-probe-runtime").apply { mkdirs() }
+    val binary = prepareBundledXrayBinary(runtimeDir)
+    extractAsset("xray/geoip.dat", File(runtimeDir, "geoip.dat"))
+    extractAsset("xray/geosite.dat", File(runtimeDir, "geosite.dat"))
+
+    val configFile = File(runtimeDir, "probe-${System.nanoTime()}.json")
+    var process: Process? = null
+
+    try {
+      configFile.writeText(configJson)
+      process =
+          ProcessBuilder(binary.absolutePath, "run", "-config", configFile.absolutePath)
+              .directory(runtimeDir)
+              .redirectErrorStream(true)
+              .apply {
+                environment()["XRAY_LOCATION_ASSET"] = runtimeDir.absolutePath
+              }
+              .start()
+      consumeProcessOutput(process)
+      waitForTcpPort("127.0.0.1", proxyPort, 5000)
+      return probeHttpLatency(proxyPort)
+    } finally {
+      try {
+        process?.destroy()
+        process?.waitFor(1200, TimeUnit.MILLISECONDS)
+        if (process?.isAlive == true) {
+          process?.destroyForcibly()
+        }
+      } catch (_: Exception) {
+        try {
+          process?.destroyForcibly()
+        } catch (_: Exception) {}
+      }
+
+      try {
+        configFile.delete()
+      } catch (_: Exception) {}
+    }
+  }
+
+  private fun probeHttpLatency(proxyPort: Int): Int {
+    val endpoints =
+        listOf(
+            "https://www.youtube.com/generate_204",
+            "https://www.google.com/generate_204")
+    var lastError: Exception? = null
+
+    for (endpoint in endpoints) {
+      try {
+        val startedAt = System.nanoTime()
+        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", proxyPort))
+        val connection = URL("$endpoint?t=${System.currentTimeMillis()}").openConnection(proxy) as HttpURLConnection
+
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.requestMethod = "GET"
+        connection.instanceFollowRedirects = false
+        connection.setRequestProperty("Cache-Control", "no-cache")
+        connection.setRequestProperty("Pragma", "no-cache")
+        connection.setRequestProperty("User-Agent", "V2Dex/1.0")
+
+        try {
+          val status = connection.responseCode
+          if (status !in 200..399) {
+            throw IllegalStateException("HTTP probe failed with status $status.")
+          }
+
+          return ((System.nanoTime() - startedAt) / 1_000_000).toInt().coerceAtLeast(1)
+        } finally {
+          connection.disconnect()
+        }
+      } catch (error: Exception) {
+        lastError = error
+      }
+    }
+
+    throw lastError ?: IllegalStateException("HTTP probe timed out.")
+  }
+
+  private fun waitForTcpPort(host: String, port: Int, timeoutMs: Long) {
+    val deadline = System.nanoTime() + timeoutMs * 1_000_000
+    var lastError: Exception? = null
+
+    while (System.nanoTime() < deadline) {
+      try {
+        Socket().use { socket ->
+          socket.connect(InetSocketAddress(host, port), 250)
+        }
+        return
+      } catch (error: Exception) {
+        lastError = error
+        Thread.sleep(100)
+      }
+    }
+
+    throw lastError ?: IllegalStateException("Proxy port $port did not open.")
+  }
+
+  private fun randomProbePort(): Int = 44000 + (System.nanoTime() % 1000).toInt().let { if (it < 0) -it else it }
 
   @ReactMethod
   fun testTunnelHttpLatency(url: String, promise: Promise) {
@@ -435,6 +551,75 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
     } finally {
       connection.disconnect()
     }
+  }
+
+  private fun prepareBundledXrayBinary(runtimeDir: File): File {
+    val nativeBinary = File(reactContext.applicationInfo.nativeLibraryDir, "libxray.so")
+
+    if (nativeBinary.exists() && nativeBinary.length() > 0L) {
+      if (!nativeBinary.setExecutable(true, true) && !nativeBinary.canExecute()) {
+        throw IllegalStateException("Bundled Xray binary is not executable.")
+      }
+
+      return nativeBinary
+    }
+
+    val runtimeBinary = File(runtimeDir, "xray")
+    extractNativeXrayFromApk(runtimeBinary)
+
+    if (!runtimeBinary.setExecutable(true, true) && !runtimeBinary.canExecute()) {
+      throw IllegalStateException("Xray binary could not be marked executable.")
+    }
+
+    return runtimeBinary
+  }
+
+  private fun extractNativeXrayFromApk(runtimeBinary: File) {
+    val apkPath = reactContext.applicationInfo.sourceDir
+    val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+    val entries = listOf("lib/$abi/libxray.so", "lib/arm64-v8a/libxray.so")
+
+    ZipFile(apkPath).use { apk ->
+      val entry =
+          entries.firstNotNullOfOrNull { apk.getEntry(it) }
+              ?: throw IllegalStateException("Bundled Xray binary was not found in APK.")
+
+      apk.getInputStream(entry).use { input ->
+        runtimeBinary.outputStream().use { output ->
+          input.copyTo(output)
+        }
+      }
+    }
+  }
+
+  private fun extractAsset(assetName: String, destination: File): File {
+    if (destination.exists() && destination.length() > 0) {
+      return destination
+    }
+
+    destination.parentFile?.mkdirs()
+    reactContext.assets.open(assetName).use { input ->
+      destination.outputStream().use { output ->
+        input.copyTo(output)
+      }
+    }
+
+    return destination
+  }
+
+  private fun consumeProcessOutput(process: Process) {
+    Thread {
+      try {
+        process.inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
+          lines.forEach { line -> Log.d("V2DexBridgeProbe", line) }
+        }
+      } catch (_: Exception) {}
+    }
+        .apply {
+          isDaemon = true
+          name = "v2dex-xray-probe-log"
+          start()
+        }
   }
 
   @ReactMethod
@@ -626,7 +811,7 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
     val parsed = URI(uri)
     val params = parseQuery(parsed.rawQuery ?: "")
     val wsHost = params["host"]
-    val name = decodeComponent(parsed.rawFragment ?: "").ifBlank { "VLESS ${parsed.host}" }
+    val name = decodeComponentRepeatedly(parsed.rawFragment ?: "").ifBlank { "VLESS ${parsed.host}" }
 
     return JSONObject()
         .put("id", "node-${hashString(uri)}")
@@ -662,7 +847,7 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
 
   private fun parseRemainingBytesFromName(uri: String): Long? {
     val fragment = URI(uri).rawFragment ?: return null
-    val name = decodeComponent(fragment)
+    val name = decodeComponentRepeatedly(fragment)
     val match =
         Regex("""(?i)(\d+(?:\.\d+)?)\s*(TB|GB|MB|KB|B)""").find(name) ?: return null
     val amount = match.groupValues[1].toDoubleOrNull() ?: return null
@@ -698,6 +883,25 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
 
   private fun decodeComponent(value: String): String =
       URLDecoder.decode(value, StandardCharsets.UTF_8.name())
+
+  private fun decodeComponentRepeatedly(value: String): String {
+    var decoded = value
+
+    repeat(5) {
+      decoded =
+          try {
+            val next = decodeComponent(decoded)
+            if (next == decoded) {
+              return decoded
+            }
+            next
+          } catch (_: Exception) {
+            return decoded
+          }
+    }
+
+    return decoded
+  }
 
   private fun hashString(value: String): String {
     var hash = 7

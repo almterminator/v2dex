@@ -9,8 +9,8 @@
 {
   NSScreen *screen = NSScreen.mainScreen;
   NSRect visibleFrame = screen != nil ? screen.visibleFrame : NSMakeRect(0, 0, 1280, 720);
-  CGFloat width = MIN(1280, NSWidth(visibleFrame) - 80);
-  CGFloat height = MIN(760, NSHeight(visibleFrame) - 80);
+  CGFloat width = MIN(430, NSWidth(visibleFrame) - 80);
+  CGFloat height = MIN(844, NSHeight(visibleFrame) - 80);
 
   return NSMakeRect(
     NSMidX(visibleFrame) - width / 2,
@@ -29,7 +29,8 @@
 
   NSRect frame = [self initialWindowFrame];
   window.title = @"V2Dex";
-  window.minSize = NSMakeSize(960, 640);
+  window.minSize = NSMakeSize(NSWidth(frame), NSHeight(frame));
+  window.maxSize = NSMakeSize(NSWidth(frame), NSHeight(frame));
   window.releasedWhenClosed = NO;
   window.backgroundColor = [NSColor colorWithRed:0.04 green:0.07 blue:0.11 alpha:1.0];
   window.opaque = YES;
@@ -76,7 +77,7 @@
   rootViewController.view = rootView;
 
   self.window = [[NSWindow alloc] initWithContentRect:frame
-                                            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskResizable | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
+                                            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
                                               backing:NSBackingStoreBuffered
                                                 defer:NO];
   self.window.contentViewController = rootViewController;

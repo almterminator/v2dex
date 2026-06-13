@@ -4,18 +4,30 @@ import {colors, radii, spacing} from '../theme/tokens';
 import {useAppStore} from '../state/appStore';
 
 const items = ['overview', 'routing', 'subscriptions', 'latency', 'settings'] as const;
+export type SidebarItem = (typeof items)[number];
 
 interface SidebarProps {
+  activeItem?: SidebarItem;
   compact?: boolean;
   language?: 'en' | 'fa';
+  onAddConfig?: () => void;
+  onSelectItem?: (item: SidebarItem) => void;
   onToggleLanguage?: () => void;
 }
 
-export function Sidebar({compact = false, language = 'en', onToggleLanguage}: SidebarProps) {
+export function Sidebar({
+  activeItem = 'overview',
+  compact = false,
+  language = 'en',
+  onAddConfig,
+  onSelectItem,
+  onToggleLanguage,
+}: SidebarProps) {
   const tunnel = useAppStore(state => state.tunnel);
   const statusColor = tunnel.connecting ? colors.danger : tunnel.connected ? colors.success : colors.info;
   const statusTint = withAlpha(statusColor, 0.16);
   const isPersian = language === 'fa';
+  const supportsSidebarImport = Platform.OS === 'windows';
 
   return (
     <View style={[styles.container, compact && styles.containerCompact]}>
@@ -38,20 +50,49 @@ export function Sidebar({compact = false, language = 'en', onToggleLanguage}: Si
       ) : null}
 
       <View style={[styles.nav, compact && styles.navCompact]}>
-        {items.map((item, index) => (
+        {supportsSidebarImport && onAddConfig ? (
+          <View
+            accessibilityRole="button"
+            accessibilityLabel={labels[language].addConfig}
+            onStartShouldSetResponder={() => true}
+            onResponderRelease={onAddConfig}
+            style={[
+              styles.addConfigButton,
+              compact && styles.addConfigButtonCompact,
+              {borderColor: statusColor, backgroundColor: statusTint},
+            ]}>
+            <Text style={[styles.navText, styles.addConfigText, compact && styles.navTextCompact, isPersian && styles.rtlText]}>
+              + {labels[language].addConfig}
+            </Text>
+          </View>
+        ) : null}
+        {items.map(item => {
+          const isActive = item === activeItem;
+          return (
           <Pressable
             key={item}
-            style={[
+            accessibilityRole="button"
+            accessibilityLabel={labels[language][item]}
+            onPress={() => onSelectItem?.(item)}
+            style={({pressed}) => [
               styles.navItem,
               compact && styles.navItemCompact,
-              index === 0 && styles.navItemActive,
-              index === 0 && {backgroundColor: statusTint},
+              isActive && styles.navItemActive,
+              pressed && styles.buttonPressed,
+              isActive && {backgroundColor: statusTint},
             ]}>
-            <Text style={[styles.navText, compact && styles.navTextCompact, index === 0 && styles.navTextActive, isPersian && styles.rtlText]}>
+            <Text
+              style={[
+                styles.navText,
+                compact && styles.navTextCompact,
+                isActive && styles.navTextActive,
+                isPersian && styles.rtlText,
+              ]}>
               {labels[language][item]}
             </Text>
           </Pressable>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
@@ -65,7 +106,9 @@ const styles = StyleSheet.create({
     backgroundColor: Platform.OS === 'macos' ? 'rgba(7, 12, 19, 0.96)' : 'rgba(5, 12, 19, 0.52)',
     borderColor: colors.border,
     borderWidth: 1,
-    minHeight: '100%'
+    minHeight: '100%',
+    position: 'relative',
+    zIndex: 20,
   },
   brandRow: {
     flexDirection: 'row',
@@ -110,14 +153,30 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
+  addConfigButton: {
+    minHeight: 46,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  addConfigButtonCompact: {
+    minHeight: 40,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+  },
   navItem: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radii.md
+    paddingVertical: 12,
+    borderRadius: radii.md,
+    minHeight: 46,
+    justifyContent: 'center',
   },
   navItemCompact: {
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 10,
+    minHeight: 38,
   },
   navItemActive: {
     backgroundColor: 'rgba(111, 232, 197, 0.16)'
@@ -127,11 +186,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600'
   },
+  addConfigText: {
+    color: colors.textPrimary,
+    fontWeight: '800',
+  },
   navTextCompact: {
     fontSize: 13,
   },
   navTextActive: {
     color: colors.textPrimary
+  },
+  buttonPressed: {
+    opacity: 0.82,
   },
   rtlText: {
     writingDirection: 'rtl',
@@ -143,6 +209,7 @@ const styles = StyleSheet.create({
 
 const labels = {
   en: {
+    addConfig: 'Add Config',
     overview: 'Overview',
     routing: 'Routing',
     subscriptions: 'Subscriptions',
@@ -150,6 +217,7 @@ const labels = {
     settings: 'Settings',
   },
   fa: {
+    addConfig: 'افزودن کانفیگ',
     overview: 'نمای کلی',
     routing: 'روتینگ',
     subscriptions: 'سابسکریپشن‌ها',

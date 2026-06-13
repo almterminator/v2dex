@@ -1,7 +1,6 @@
 import {create} from 'zustand';
 import {Platform} from 'react-native';
 import {importProfileFromRaw} from '../services/configParser';
-import {measureTunnelLatency} from '../services/latency';
 import {
   discoverInstalledApps,
   copyTextToClipboard,
@@ -27,8 +26,8 @@ const defaultTunnel: TunnelStatus = {
   mode: 'full',
   backend: 'system-proxy',
   dnsLeakProtection: true,
-  proxyHost: Platform.OS === 'android' ? '0.0.0.0' : '127.0.0.1',
-  proxyPort: Platform.OS === 'android' ? 43080 : 2080,
+  proxyHost: '0.0.0.0',
+  proxyPort: Platform.OS === 'android' ? 43080 : 2081,
 };
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
@@ -87,23 +86,6 @@ const defaultDesktopAppRules: AppRouteRule[] = Platform.OS === 'macos'
     ]
   : [];
 
-async function measureTunnelLatencyWithRetry(attempts = 3): Promise<number> {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      return await measureTunnelLatency();
-    } catch (error) {
-      lastError = error;
-      if (attempt < attempts - 1) {
-        await delay(1200 * (attempt + 1));
-      }
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error('Latency probe failed.');
-}
-
 interface PersistedAppState {
   profiles: SubscriptionProfile[];
   appRules: AppRouteRule[];
@@ -111,6 +93,13 @@ interface PersistedAppState {
   activeNodeId?: string;
   importDraft: string;
   mode: TunnelMode;
+  debugConnect?: {
+    stage: string;
+    at: string;
+    activeNodeId?: string;
+    mode?: TunnelMode;
+    error?: string;
+  };
 }
 
 interface AppState {
@@ -220,6 +209,16 @@ async function persistStateSnapshot(state: AppState) {
   await savePersistedAppState(JSON.stringify(serializeState(state)));
 }
 
+async function persistConnectDebug(
+  state: AppState,
+  debugConnect: PersistedAppState['debugConnect'],
+) {
+  await savePersistedAppState(JSON.stringify({
+    ...serializeState(state),
+    debugConnect,
+  }));
+}
+
 async function measurePingButtonLatency(
   state: AppState,
   node: ProxyNode,
@@ -230,9 +229,7 @@ async function measurePingButtonLatency(
     state.tunnel.proxyPort &&
     (!profileId || profileId === state.activeProfile?.id);
   const latencyMs = shouldTestActiveTunnel
-    ? Platform.OS === 'android'
-      ? (await runTunnelHttpLatencyTest()).latencyMs
-      : await measureTunnelLatencyWithRetry()
+    ? (await runTunnelHttpLatencyTest()).latencyMs
     : (await runServerConnectionTest(node)).latencyMs;
 
   if (typeof latencyMs !== 'number') {
@@ -397,6 +394,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   connect: async () => {
     const state = get();
+    await persistConnectDebug(state, {
+      stage: 'connect-called',
+      at: new Date().toISOString(),
+      activeNodeId: state.activeNode?.id,
+      mode: state.tunnel.mode,
+    });
     if (!state.activeNode) {
       set(current => ({
         tunnel: {
@@ -431,6 +434,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         mode: state.tunnel.mode,
         appRules: state.appRules,
       });
+      await persistConnectDebug(get(), {
+        stage: 'native-start-resolved',
+        at: new Date().toISOString(),
+        activeNodeId: state.activeNode.id,
+        mode: state.tunnel.mode,
+      });
       set(current => ({
         tunnel: {
           ...current.tunnel,
@@ -453,11 +462,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().refreshTunnelStatus();
 
       if (get().tunnel.connected) {
-        await get().refreshPing();
+        void get().refreshPing();
         void get().refreshExitIpInfo();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Native tunnel start failed.';
+      await persistConnectDebug(get(), {
+        stage: 'connect-failed',
+        at: new Date().toISOString(),
+        activeNodeId: state.activeNode?.id,
+        mode: state.tunnel.mode,
+        error: message,
+      });
       set(current => ({
         tunnel: {
           ...current.tunnel,
@@ -759,21 +775,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     const profiles = get().profiles;
     const results: Record<string, number | 'TO'> = {};
 
-    await Promise.all(
-      profiles.map(async profile => {
-        const node = profile.nodes[0];
-        if (!node) {
-          results[profile.id] = 'TO';
-          return;
-        }
+    for (const profile of profiles) {
+      const node = profile.nodes[0];
+      if (!node) {
+        results[profile.id] = 'TO';
+        continue;
+      }
 
-        try {
-          results[profile.id] = await measurePingButtonLatency(get(), node, profile.id);
-        } catch {
-          results[profile.id] = 'TO';
-        }
-      }),
-    );
+      try {
+        results[profile.id] = await measurePingButtonLatency(get(), node, profile.id);
+      } catch {
+        results[profile.id] = 'TO';
+      }
+
+      await delay(250);
+    }
 
     set(state => {
       const profilesWithLatency = state.profiles.map(profile => {
@@ -821,13 +837,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await copyTextToClipboard(link);
   },
   copyLocalProxyCommand: async (host, port) => {
-    const command = `autossh -M 0 -N \\
-  -o ExitOnForwardFailure=yes \\
-  -o ServerAliveInterval=30 \\
-  -o ServerAliveCountMax=3 \\
-  -R ${host}:${port} \\
-  root@5.160.218.99`;
-    await copyTextToClipboard(command);
+    await copyTextToClipboard(`${host}:${port}`);
   },
   refreshPing: async () => {
     const state = get();
@@ -868,7 +878,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...current.tunnel,
           pingMs: undefined,
           pingTimedOut: true,
-          lastError: error instanceof Error ? error.message : 'Ping failed.',
+          lastError: current.tunnel.connected
+            ? current.tunnel.lastError
+            : error instanceof Error ? error.message : 'Ping failed.',
         },
       }));
     }
