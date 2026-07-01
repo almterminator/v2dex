@@ -94,14 +94,6 @@ public final class SingboxRuntime: @unchecked Sendable {
                     self.elevatedPID = pid
                 }
                 try waitForProxyReady(elevatedPID: pid, logPath: elevatedLogPath)
-                if mode == .full {
-                    try proxyController.enableProxy(
-                        host: SingboxConfigBuilder.loopbackProxyHost,
-                        port: SingboxConfigBuilder.localProxyPort
-                    )
-                } else {
-                    try proxyController.disableProxy()
-                }
                 stateQueue.sync {
                     self.process = nil
                     self.elevatedPID = pid
@@ -112,7 +104,6 @@ public final class SingboxRuntime: @unchecked Sendable {
                 return statusSnapshot()
             } catch {
                 try? killElevatedSingbox()
-                try? proxyController.disableProxy()
                 stateQueue.sync {
                     self.connecting = false
                     self.elevatedPID = nil
@@ -156,21 +147,9 @@ public final class SingboxRuntime: @unchecked Sendable {
         do {
             try process.run()
             try waitForProxyReady(process: process)
-            if mode == .full {
-                try proxyController.enableProxy(
-                    host: SingboxConfigBuilder.loopbackProxyHost,
-                    port: SingboxConfigBuilder.localProxyPort
-                )
-                stateQueue.sync {
-                    self.proxiedAppBundleIDs = []
-                    self.unsupportedPerAppBundleIDs = []
-                }
-            } else {
-                try proxyController.disableProxy()
-                stateQueue.sync {
-                    self.proxiedAppBundleIDs = []
-                    self.unsupportedPerAppBundleIDs = []
-                }
+            stateQueue.sync {
+                self.proxiedAppBundleIDs = []
+                self.unsupportedPerAppBundleIDs = []
             }
             stateQueue.sync {
                 self.process = process
@@ -181,7 +160,6 @@ public final class SingboxRuntime: @unchecked Sendable {
             return statusSnapshot()
         } catch {
             process.terminate()
-            try? proxyController.disableProxy()
             stateQueue.sync {
                 self.connecting = false
                 self.proxiedAppBundleIDs = []
@@ -220,11 +198,6 @@ public final class SingboxRuntime: @unchecked Sendable {
                     cleanupErrors.append(error.localizedDescription)
                 }
             }
-            do {
-                try proxyController.disableProxy()
-            } catch {
-                cleanupErrors.append(error.localizedDescription)
-            }
             stateQueue.sync {
                 self.proxiedAppBundleIDs = []
                 self.elevatedPID = nil
@@ -236,11 +209,6 @@ public final class SingboxRuntime: @unchecked Sendable {
             return
         }
 
-        do {
-            try proxyController.disableProxy()
-        } catch {
-            cleanupErrors.append(error.localizedDescription)
-        }
         process.terminate()
         if cleanupStaleProcesses, let resolvedBinaryPath {
             do {

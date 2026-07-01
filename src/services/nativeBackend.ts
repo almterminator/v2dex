@@ -185,7 +185,12 @@ export async function startNativeTunnel(input: {
     throw new Error(getDesktopBridgeIssue() ?? 'Native bridge is unavailable on this platform.');
   }
 
-  const config = Platform.OS === 'android' ? buildXrayConfig(input) : buildSingboxConfig(input);
+  const config = Platform.OS === 'android'
+    ? buildXrayConfig(input)
+    : buildSingboxConfig({
+        ...input,
+        setSystemProxy: Platform.OS === 'macos' && input.mode === 'full',
+      });
   return bridge.startTunnel(JSON.stringify(config, null, 2), input.mode, JSON.stringify(input.appRules));
 }
 

@@ -91,7 +91,7 @@ export function DashboardScreen() {
   const [discoveringApps, setDiscoveringApps] = React.useState(false);
   const [pingingAll, setPingingAll] = React.useState(false);
   const [appSearchQuery, setAppSearchQuery] = React.useState('');
-  const [profilePingResults, setProfilePingResults] = React.useState<Record<string, number | 'TO'> | null>(null);
+  const [profilePingResults, setProfilePingResults] = React.useState<Record<string, number | 'TO' | 'PINGING'> | null>(null);
   const [activeSidebarItem, setActiveSidebarItem] = React.useState<SidebarItem>('overview');
   const [contentScrollY, setContentScrollY] = React.useState(0);
   const [savedConfigsHeaderFrame, setSavedConfigsHeaderFrame] = React.useState<{
@@ -296,6 +296,7 @@ export function DashboardScreen() {
     }
 
     setPingingAll(true);
+    setProfilePingResults(Object.fromEntries(profiles.map(profile => [profile.id, 'PINGING'])));
     try {
       const results = await pingAllProfiles();
       setProfilePingResults(results);
@@ -609,22 +610,20 @@ export function DashboardScreen() {
 
                 {!isCompact ? (
                   <View style={styles.ctaRow}>
-                    {Platform.OS === 'macos' ? (
-                      <View style={styles.nativeConnectButtonSlot} />
-                    ) : (
-                      <View
-                        accessibilityRole="button"
-                        accessibilityLabel={tunnel.connected ? t('disconnect') : t('connect')}
-                        onStartShouldSetResponder={() => true}
-                        onResponderRelease={handleConnectToggle}
-                        onTouchStart={handleConnectToggle}
-                        {...macClickHandlers(handleConnectToggle)}
-                        style={[styles.primaryButton, {backgroundColor: statusColor}]}>
-                        <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>
-                          {tunnel.connecting ? t('connectingEllipsis') : tunnel.connected ? t('disconnect') : t('connect')}
-                        </Text>
-                      </View>
-                    )}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={tunnel.connected ? t('disconnect') : t('connect')}
+                      onPress={handleConnectToggle}
+                      {...macClickHandlers(handleConnectToggle)}
+                      style={({pressed}) => [
+                        styles.primaryButton,
+                        {backgroundColor: statusColor},
+                        pressed && styles.buttonPressed,
+                      ]}>
+                      <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>
+                        {tunnel.connecting ? t('connectingEllipsis') : tunnel.connected ? t('disconnect') : t('connect')}
+                      </Text>
+                    </Pressable>
 
                     <Pressable
                       onPress={() => setMode(tunnel.mode === 'full' ? 'per-app' : 'full')}
@@ -858,23 +857,20 @@ export function DashboardScreen() {
 
         {isCompact ? (
           <View style={[styles.fixedActionBar, {marginBottom: insets.bottom}]}>
-            <View
+            <Pressable
               accessibilityRole="button"
               accessibilityLabel={tunnel.connected ? t('disconnect') : t('connect')}
-              onStartShouldSetResponder={() => true}
-              onTouchStart={() => {
-                if (tunnel.connected) {
-                  void disconnect();
-                  return;
-                }
-
-                void connect();
-              }}
-              style={[styles.fixedConnectButton, {backgroundColor: statusColor}]}>
+              onPress={handleConnectToggle}
+              {...macClickHandlers(handleConnectToggle)}
+              style={({pressed}) => [
+                styles.fixedConnectButton,
+                {backgroundColor: statusColor},
+                pressed && styles.buttonPressed,
+              ]}>
               <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>
                 {tunnel.connecting ? t('connecting') : tunnel.connected ? t('disconnect') : t('connect')}
               </Text>
-            </View>
+            </Pressable>
 
             <View
               accessibilityRole="button"
@@ -1839,8 +1835,6 @@ function macClickHandlers(handler: () => void) {
   return Platform.OS === 'macos'
     ? ({
         onClick: handler,
-        onMouseDown: handler,
-        onPointerDown: handler,
       } as Record<string, unknown>)
     : {};
 }
@@ -1928,10 +1922,13 @@ function parseRemainingTrafficLabel(value?: string) {
 function formatProfileStamp(
   profileId: string,
   updatedAt: string,
-  pingResults: Record<string, number | 'TO'> | null,
+  pingResults: Record<string, number | 'TO' | 'PINGING'> | null,
   latencyMs?: number,
 ) {
   const ping = pingResults?.[profileId];
+  if (ping === 'PINGING') {
+    return '...';
+  }
   if (typeof ping === 'number') {
     return `${ping}ms`;
   }

@@ -5,27 +5,46 @@ interface BuildOptions {
   mode: TunnelMode;
   appRules: AppRouteRule[];
   localProxyPort?: number;
+  setSystemProxy?: boolean;
 }
 
-export function buildSingboxConfig({node, mode, appRules, localProxyPort = 2081}: BuildOptions) {
+export function buildSingboxConfig({
+  node,
+  mode,
+  appRules,
+  localProxyPort = 2081,
+  setSystemProxy = false,
+}: BuildOptions) {
   const useTun = requiresTun(appRules);
   const ruleSet = buildRuleSet(mode, appRules, useTun);
   const finalOutbound = useTun ? 'direct' : 'proxy';
 
   return {
     log: {
-      level: 'info'
+      level: 'warn'
     },
-    inbounds: buildInbounds(useTun, localProxyPort),
+    dns: {
+      servers: [
+        {
+          tag: 'local',
+          type: 'local'
+        }
+      ],
+      final: 'local',
+      strategy: 'prefer_ipv4'
+    },
+    inbounds: buildInbounds(useTun, localProxyPort, setSystemProxy),
     outbounds: [
       buildProxyOutbound(node),
       {
         tag: 'direct',
-        type: 'direct'
+        type: 'direct',
+        domain_resolver: preferredDomainResolver()
       }
     ],
     route: {
       auto_detect_interface: true,
+      default_domain_resolver: preferredDomainResolver(),
       final: finalOutbound,
       rules: ruleSet
     }
@@ -36,7 +55,7 @@ function requiresTun(appRules: AppRouteRule[]) {
   return false;
 }
 
-function buildInbounds(useTun: boolean, localProxyPort: number) {
+function buildInbounds(useTun: boolean, localProxyPort: number, setSystemProxy: boolean) {
   const inbounds = [];
 
   if (useTun) {
@@ -55,18 +74,36 @@ function buildInbounds(useTun: boolean, localProxyPort: number) {
     tag: 'mixed-in',
     listen: '0.0.0.0',
     listen_port: localProxyPort,
-    set_system_proxy: false
+    set_system_proxy: setSystemProxy
   });
 
   return inbounds;
 }
 
 function buildRuleSet(mode: TunnelMode, appRules: AppRouteRule[], useTun: boolean) {
-  const rules = [];
+  const rules: Record<string, unknown>[] = [
+    {
+      inbound: 'mixed-in',
+      action: 'resolve',
+      server: 'local',
+      strategy: 'prefer_ipv4',
+    },
+    {
+      inbound: 'mixed-in',
+      action: 'sniff',
+      timeout: '300ms',
+    },
+    {
+      ip_is_private: true,
+      action: 'route',
+      outbound: 'direct',
+    },
+  ];
 
   if (useTun) {
     rules.push({
       inbound: ['mixed-in'],
+      action: 'route',
       outbound: 'proxy',
     });
   }
@@ -86,6 +123,7 @@ function buildRuleSet(mode: TunnelMode, appRules: AppRouteRule[], useTun: boolea
     if (processNames.length > 0) {
       rules.push({
         process_name: processNames,
+        action: 'route',
         outbound: 'proxy'
       });
     }
@@ -94,6 +132,7 @@ function buildRuleSet(mode: TunnelMode, appRules: AppRouteRule[], useTun: boolea
     if (pathRegexes.length > 0) {
       rules.push({
         process_path_regex: pathRegexes,
+        action: 'route',
         outbound: 'proxy'
       });
     }
@@ -244,7 +283,10 @@ function buildProxyOutbound(node: ProxyNode) {
   const common = {
     tag: 'proxy',
     server: node.server,
-    server_port: node.port
+    server_port: node.port,
+    domain_resolver: preferredDomainResolver(),
+    tcp_fast_open: true,
+    udp_fragment: true,
   };
 
   switch (node.protocol) {
@@ -316,6 +358,13 @@ function buildProxyOutbound(node: ProxyNode) {
         transport: buildTransport(node)
       };
   }
+}
+
+function preferredDomainResolver() {
+  return {
+    server: 'local',
+    strategy: 'prefer_ipv4',
+  };
 }
 
 function buildTransport(node: ProxyNode) {

@@ -26,4 +26,5 @@ ios/build
 macos/build
 macos/build-arm64
 .build-artifacts/windows-installer
+.removed-app-bundles
 android/local.properties

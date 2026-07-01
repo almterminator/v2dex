@@ -26,13 +26,47 @@ final class SmokeTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let route = try XCTUnwrap(json["route"] as? [String: Any])
         let rules = try XCTUnwrap(route["rules"] as? [[String: Any]])
-        let firstRule = try XCTUnwrap(rules.first)
-        let processNames = try XCTUnwrap(firstRule["process_name"] as? [String])
+        let processRule = try XCTUnwrap(rules.first { $0["process_name"] != nil })
+        let processNames = try XCTUnwrap(processRule["process_name"] as? [String])
 
         XCTAssertEqual(route["final"] as? String, "proxy")
-        XCTAssertEqual(firstRule["outbound"] as? String, "proxy")
+        XCTAssertEqual(processRule["action"] as? String, "route")
+        XCTAssertEqual(processRule["outbound"] as? String, "proxy")
         XCTAssertTrue(processNames.contains("Google Chrome"))
         XCTAssertTrue(processNames.contains("Google Chrome Helper"))
+    }
+
+    func testSingboxConfigIncludesPerformanceDefaults() throws {
+        let node = ProxyNode(
+            id: "1",
+            name: "Node",
+            protocolType: "vless",
+            server: "example.invalid",
+            port: 443,
+            security: "tls",
+            transport: "ws",
+            sni: nil,
+            path: "/"
+        )
+
+        let data = try SingboxConfigBuilder.build(node: node, mode: .full, appRules: [])
+
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let log = try XCTUnwrap(json["log"] as? [String: Any])
+        let dns = try XCTUnwrap(json["dns"] as? [String: Any])
+        let route = try XCTUnwrap(json["route"] as? [String: Any])
+        let rules = try XCTUnwrap(route["rules"] as? [[String: Any]])
+        let outbounds = try XCTUnwrap(json["outbounds"] as? [[String: Any]])
+        let proxy = try XCTUnwrap(outbounds.first { $0["tag"] as? String == "proxy" })
+
+        XCTAssertEqual(log["level"] as? String, "warn")
+        XCTAssertEqual(dns["strategy"] as? String, "prefer_ipv4")
+        XCTAssertNotNil(route["default_domain_resolver"])
+        XCTAssertTrue(rules.contains { $0["action"] as? String == "resolve" })
+        XCTAssertTrue(rules.contains { $0["action"] as? String == "sniff" })
+        XCTAssertEqual(proxy["tcp_fast_open"] as? Bool, true)
+        XCTAssertEqual(proxy["udp_fragment"] as? Bool, true)
+        XCTAssertNotNil(proxy["domain_resolver"])
     }
 
     func testPerAppConfigKeepsLocalProxyInboundOnProxyOutbound() throws {

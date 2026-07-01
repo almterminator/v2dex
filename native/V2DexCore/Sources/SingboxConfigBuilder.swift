@@ -17,18 +17,30 @@ public enum SingboxConfigBuilder {
 
         let config: [String: Any] = [
             "log": [
-                "level": "info"
+                "level": "warn"
             ],
-            "inbounds": inbounds(useTun: useTun),
+            "dns": [
+                "servers": [
+                    [
+                        "tag": "local",
+                        "type": "local"
+                    ]
+                ],
+                "final": "local",
+                "strategy": "prefer_ipv4"
+            ],
+            "inbounds": inbounds(useTun: useTun, setSystemProxy: mode == .full),
             "outbounds": [
                 outboundDictionary(for: node),
                 [
                     "tag": "direct",
-                    "type": "direct"
+                    "type": "direct",
+                    "domain_resolver": preferredDomainResolver()
                 ]
             ],
             "route": [
                 "auto_detect_interface": true,
+                "default_domain_resolver": preferredDomainResolver(),
                 "final": finalOutbound,
                 "rules": routeRules
             ]
@@ -41,7 +53,7 @@ public enum SingboxConfigBuilder {
         false
     }
 
-    private static func inbounds(useTun: Bool) -> [[String: Any]] {
+    private static func inbounds(useTun: Bool, setSystemProxy: Bool) -> [[String: Any]] {
         var values: [[String: Any]] = []
 
         if useTun {
@@ -62,7 +74,7 @@ public enum SingboxConfigBuilder {
             "tag": "mixed-in",
             "listen": localProxyListenHost,
             "listen_port": localProxyPort,
-            "set_system_proxy": false
+            "set_system_proxy": setSystemProxy
         ])
 
         return values
@@ -137,13 +149,31 @@ public enum SingboxConfigBuilder {
     }
 
     private static func buildRouteRules(mode: TunnelMode, appRules: [AppRouteRule], useTun: Bool) -> [[String: Any]] {
-        var routeRules: [[String: Any]] = []
+        var routeRules: [[String: Any]] = [
+            [
+                "inbound": "mixed-in",
+                "action": "resolve",
+                "server": "local",
+                "strategy": "prefer_ipv4"
+            ],
+            [
+                "inbound": "mixed-in",
+                "action": "sniff",
+                "timeout": "300ms"
+            ],
+            [
+                "ip_is_private": true,
+                "action": "route",
+                "outbound": "direct"
+            ]
+        ]
 
         if useTun {
             routeRules.append([
                 "inbound": [
                     "mixed-in"
                 ],
+                "action": "route",
                 "outbound": "proxy"
             ])
         }
@@ -163,6 +193,7 @@ public enum SingboxConfigBuilder {
             if !processNames.isEmpty {
                 routeRules.append([
                     "process_name": processNames,
+                    "action": "route",
                     "outbound": "proxy"
                 ])
             }
@@ -171,6 +202,7 @@ public enum SingboxConfigBuilder {
             if !pathRegexes.isEmpty {
                 routeRules.append([
                     "process_path_regex": pathRegexes,
+                    "action": "route",
                     "outbound": "proxy"
                 ])
             }
@@ -302,7 +334,10 @@ public enum SingboxConfigBuilder {
             "tag": "proxy",
             "type": node.protocolType,
             "server": node.server,
-            "server_port": node.port
+            "server_port": node.port,
+            "domain_resolver": preferredDomainResolver(),
+            "tcp_fast_open": true,
+            "udp_fragment": true
         ]
 
         if ["vless", "vmess", "tuic"].contains(node.protocolType), let uuid = node.uuid {
@@ -383,6 +418,13 @@ public enum SingboxConfigBuilder {
         }
 
         return outbound
+    }
+
+    private static func preferredDomainResolver() -> [String: Any] {
+        [
+            "server": "local",
+            "strategy": "prefer_ipv4"
+        ]
     }
 
     private static func webSocketTransport(path rawPath: String) -> [String: Any] {

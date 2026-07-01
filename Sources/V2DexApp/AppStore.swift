@@ -13,6 +13,14 @@ final class AppStore: ObservableObject {
     @Published var statusLine = "Ready"
     @Published var configPreview = "{}"
 
+    private struct PersistedAppState: Codable {
+        var profiles: [ProfileSummary]
+        var appRules: [AppRuleViewModel]
+        var activeProfileId: String?
+        var activeNodeId: String?
+        var mode: TunnelMode?
+    }
+
     var activeProfile: ProfileSummary? {
         profiles.first { $0.id == tunnel.selectedProfileID } ?? profiles.first
     }
@@ -23,16 +31,40 @@ final class AppStore: ObservableObject {
     }
 
     init() {
-        tunnel.selectedProfileID = profiles.first?.id
-        tunnel.selectedNodeID = profiles.first?.nodes.first?.id
+        loadPersistedState()
+        tunnel.selectedProfileID = tunnel.selectedProfileID ?? profiles.first?.id
+        tunnel.selectedNodeID = tunnel.selectedNodeID ?? profiles.first?.nodes.first?.id
         refreshConfigPreview()
     }
 
     func toggleConnection() {
         if tunnel.connected {
-            tunnel.connected = false
-            tunnel.connecting = false
-            statusLine = "System proxy disconnected"
+            tunnel.connecting = true
+            statusLine = "Stopping local proxy runtime..."
+            Task {
+                do {
+                    try SingboxRuntime.shared.stopIfNeeded()
+                    await MainActor.run {
+                        tunnel.connected = false
+                        tunnel.connecting = false
+                        tunnel.lastError = nil
+                        statusLine = "System proxy disconnected"
+                    }
+                } catch {
+                    await MainActor.run {
+                        tunnel.connected = false
+                        tunnel.connecting = false
+                        tunnel.lastError = error.localizedDescription
+                        statusLine = "Disconnect failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+            return
+        }
+
+        guard let node = activeNode else {
+            tunnel.lastError = "No active node"
+            statusLine = "No active node"
             return
         }
 
@@ -40,11 +72,32 @@ final class AppStore: ObservableObject {
         statusLine = "Starting local proxy runtime..."
 
         Task {
-            try? await Task.sleep(for: .milliseconds(650))
-            tunnel.connecting = false
-            tunnel.connected = true
-            tunnel.lastConnectedAt = Date()
-            statusLine = "macOS proxy active via \(activeNode?.name ?? "selected node")"
+            do {
+                let configData = try SingboxConfigBuilder.build(
+                    node: node,
+                    mode: tunnel.mode,
+                    appRules: appRules.map(\.coreRule)
+                )
+                let snapshot = try SingboxRuntime.shared.start(
+                    configData: configData,
+                    mode: tunnel.mode,
+                    appRules: appRules.map(\.coreRule)
+                )
+                await MainActor.run {
+                    tunnel.connecting = snapshot.connecting
+                    tunnel.connected = snapshot.connected
+                    tunnel.lastConnectedAt = snapshot.lastConnectedAt ?? Date()
+                    tunnel.lastError = nil
+                    statusLine = "macOS proxy active via \(node.name)"
+                }
+            } catch {
+                await MainActor.run {
+                    tunnel.connecting = false
+                    tunnel.connected = false
+                    tunnel.lastError = error.localizedDescription
+                    statusLine = "Connect failed: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
@@ -172,47 +225,25 @@ final class AppStore: ObservableObject {
     }
 
     func runLatencyTest() {
-        guard var profile = activeProfile else {
+        guard let node = activeNode else {
             statusLine = "No active profile"
             return
         }
 
-        profile.nodes = profile.nodes.enumerated().map { offset, node in
-            var copy = node
-            copy = ProxyNode(
-                id: node.id,
-                name: node.name,
-                protocolType: node.protocolType,
-                server: node.server,
-                port: node.port,
-                security: node.security,
-                transport: node.transport,
-                sni: node.sni,
-                path: node.path
-            )
-            return copy
-        }
+        statusLine = "Testing \(node.name)..."
 
-        for index in profile.nodes.indices {
-            let base = 32 + index * 18
-            profile.nodes[index] = ProxyNode(
-                id: profile.nodes[index].id,
-                name: profile.nodes[index].name + " · \(base)ms",
-                protocolType: profile.nodes[index].protocolType,
-                server: profile.nodes[index].server,
-                port: profile.nodes[index].port,
-                security: profile.nodes[index].security,
-                transport: profile.nodes[index].transport,
-                sni: profile.nodes[index].sni,
-                path: profile.nodes[index].path
-            )
+        Task {
+            do {
+                let result = try await ConnectivityTester.testProxyHTTPProbe(to: node)
+                await MainActor.run {
+                    statusLine = "Ping \(result.latencyMs) ms via \(result.url)"
+                }
+            } catch {
+                await MainActor.run {
+                    statusLine = "Ping failed: \(error.localizedDescription)"
+                }
+            }
         }
-
-        if let idx = profiles.firstIndex(where: { $0.id == profile.id }) {
-            profiles[idx] = profile
-        }
-
-        statusLine = "Latency test complete"
     }
 
     func refreshConfigPreview() {
@@ -231,6 +262,52 @@ final class AppStore: ObservableObject {
         } catch {
             configPreview = "{\n  \"error\": \"\(error.localizedDescription)\"\n}"
         }
+    }
+
+    private func loadPersistedState() {
+        guard let raw = UserDefaults.standard.string(forKey: "v2dex.persisted.app.state"),
+              let data = raw.data(using: .utf8)
+        else {
+            return
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+
+            let fractionalFormatter = ISO8601DateFormatter()
+            fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractionalFormatter.date(from: value) {
+                return date
+            }
+
+            let formatter = ISO8601DateFormatter()
+            if let date = formatter.date(from: value) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO8601 date: \(value)"
+            )
+        }
+
+        guard let state = try? decoder.decode(PersistedAppState.self, from: data) else {
+            statusLine = "Saved profile could not be loaded"
+            return
+        }
+
+        if !state.profiles.isEmpty {
+            profiles = state.profiles
+        }
+        if !state.appRules.isEmpty {
+            appRules = state.appRules
+        }
+        tunnel.selectedProfileID = state.activeProfileId
+        tunnel.selectedNodeID = state.activeNodeId
+        tunnel.mode = state.mode ?? .full
+        statusLine = "Loaded saved profile"
     }
 
     var filteredRules: [AppRuleViewModel] {
