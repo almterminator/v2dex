@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  ActivityIndicator,
   Alert,
   GestureResponderEvent,
   Image,
@@ -24,11 +25,14 @@ import {buildManualProfile} from '../services/configParser';
 import {colors, radii, spacing} from '../theme/tokens';
 import {useAppStore} from '../state/appStore';
 
+const powerIcon = require('../assets/powericon.webp');
+
 export function DashboardScreen() {
   const {width} = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isCompact = width < 760;
   const isDesktop = Platform.OS === 'macos' || Platform.OS === 'windows';
+  const isAndroidMonitor = Platform.OS === 'android' && !isCompact;
   const [language, setLanguage] = React.useState<'en' | 'fa'>('en');
   const isPersian = language === 'fa';
   const textDirectionStyle = isPersian ? styles.rtlText : styles.ltrText;
@@ -500,6 +504,249 @@ export function DashboardScreen() {
       </View>
     </View>
   );
+
+  if (isAndroidMonitor) {
+    return (
+      <AppGradient
+        colors={['#060A10', '#060A10']}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 1}}
+        style={styles.background}>
+        <View style={[styles.monitorShell, {paddingTop: spacing.md + insets.top}]}>
+          <View style={styles.monitorHeader}>
+            <View style={styles.monitorHeaderCopy}>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.72}
+                style={[styles.monitorConfigTitle, textDirectionStyle]}>
+                {activeProfile?.title ?? t('noConfigSelected')}
+              </Text>
+              <Text numberOfLines={1} style={[styles.monitorConfigMeta, textDirectionStyle]}>
+                {activeNode
+                  ? `${tunnel.connected ? t('connected') : tunnel.connecting ? t('connecting') : t('disconnected')} · ${activeNode.protocol.toUpperCase()} · ${activeNode.server}:${activeNode.port}`
+                  : t('noNodeSelected')}
+              </Text>
+            </View>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('importProfile')}
+            onPress={openImportDialog}
+            style={({pressed}) => [
+              styles.monitorAddButton,
+              {borderColor: 'rgba(255,255,255,0.16)', backgroundColor: 'rgba(12, 19, 28, 0.94)'},
+              pressed && styles.buttonPressed,
+            ]}>
+            <Text style={styles.monitorAddButtonText}>+</Text>
+          </Pressable>
+
+          <View style={styles.monitorMain}>
+            <GlassCard style={styles.monitorConfigsCard} innerStyle={styles.monitorConfigsInner}>
+              <View style={[styles.monitorSectionHeader, isPersian && styles.savedConfigsHeaderRtl]}>
+                <Text style={[styles.monitorSectionTitle, textDirectionStyle]}>{t('savedConfigs')}</Text>
+              </View>
+
+              <ScrollView
+                style={styles.monitorConfigScroll}
+                contentContainerStyle={styles.monitorConfigList}
+                keyboardShouldPersistTaps="handled">
+                {profiles.length === 0 ? (
+                  <Text style={[styles.metaText, textDirectionStyle]}>{t('noImportedConfig')}</Text>
+                ) : (
+                  profiles.map(profile => (
+                    <Pressable
+                      key={profile.id}
+                      onPress={() => selectProfile(profile.id)}
+                      onLongPress={event =>
+                        setContextMenu({
+                          kind: 'profile',
+                          profileId: profile.id,
+                          x: event.nativeEvent.pageX,
+                          y: event.nativeEvent.pageY,
+                        })
+                      }
+                      style={({pressed}) => [
+                        styles.monitorProfileRow,
+                        activeProfile?.id === profile.id && {
+                          borderColor: 'rgba(111, 232, 197, 0.42)',
+                          backgroundColor: 'rgba(111, 232, 197, 0.08)',
+                        },
+                        pressed && styles.buttonPressed,
+                      ]}>
+                      <View style={styles.monitorProfileIcon}>
+                        <Text style={styles.monitorProfileIconText}>
+                          {activeProfile?.id === profile.id ? '✓' : '≡'}
+                        </Text>
+                      </View>
+                      <View style={styles.monitorProfileMeta}>
+                        <Text numberOfLines={1} style={[styles.monitorProfileTitle, textDirectionStyle]}>
+                          {profile.title}
+                        </Text>
+                        <Text numberOfLines={1} style={[styles.monitorProfileSubtitle, textDirectionStyle]}>
+                          {profile.nodes[0]?.server ?? translateProfileSource(profile.source, language)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.monitorProfilePing, pingStampColorStyle(profile.id, profilePingResults, profile.nodes[0]?.latencyMs)]}>
+                        {formatProfileStamp(
+                          profile.id,
+                          profile.updatedAt,
+                          profilePingResults,
+                          profile.nodes[0]?.latencyMs,
+                        )}
+                      </Text>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
+              {tunnel.lastError ? <Text style={styles.errorText}>{tunnel.lastError}</Text> : null}
+            </GlassCard>
+          </View>
+
+          <View style={[styles.monitorDock, {bottom: spacing.md + insets.bottom}]}>
+            <View style={[styles.monitorDockPanel, styles.monitorLocationPanel]}>
+              <View style={styles.monitorFlagButton}>
+                <Text style={styles.monitorFlagText}>
+                  {tunnel.connected && tunnel.exitCountryCode ? countryCodeToFlag(tunnel.exitCountryCode) : '◎'}
+                </Text>
+              </View>
+              <View style={styles.monitorCountryCopy}>
+                <Text numberOfLines={1} style={[styles.monitorCountryTitle, textDirectionStyle]}>
+                  {monitorCountryLabel(tunnel.connected, tunnel.connecting, tunnel.exitCountry, tunnel.exitCountryCode, t)}
+                </Text>
+                <Text numberOfLines={1} style={[styles.monitorCountryMeta, textDirectionStyle]}>
+                  {tunnel.connected && tunnel.exitIp ? tunnel.exitIp : tunnel.connected ? t('connected') : t('disconnected')}
+                </Text>
+              </View>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={mobilePingLabel(tunnel.pingMs, tunnel.pingTimedOut)}
+              onPress={() => void refreshPing()}
+              style={({pressed}) => [styles.monitorDockPanel, styles.monitorPingPanel, pressed && styles.buttonPressed]}>
+              <Text style={[styles.monitorPingValue, mobilePingColorStyle(tunnel.pingMs, tunnel.pingTimedOut)]}>
+                {mobilePingLabel(tunnel.pingMs, tunnel.pingTimedOut)}
+              </Text>
+              <Text style={[styles.monitorPingMeta, textDirectionStyle]}>{t('connectionPing')}</Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tunnel.connected ? t('disconnect') : t('connect')}
+            onPress={handleConnectToggle}
+            style={({pressed}) => [
+              styles.monitorConnectButton,
+              tunnel.connected && styles.monitorConnectButtonActive,
+              tunnel.connecting && styles.monitorConnectButtonConnecting,
+              pressed && styles.buttonPressed,
+            ]}>
+            {tunnel.connecting ? (
+              <ActivityIndicator color={colors.textPrimary} size="large" />
+            ) : (
+              <Image source={powerIcon} style={styles.monitorConnectIconImage} resizeMode="contain" />
+            )}
+          </Pressable>
+
+          {contextMenu ? (
+            <View style={styles.contextMenuLayer} pointerEvents="box-none">
+              <Pressable style={styles.contextMenuDismiss} onPress={() => setContextMenu(null)} />
+              <View
+                style={[
+                  styles.contextMenu,
+                  {
+                    left: Math.min(Math.max(contextMenu.x - 220, spacing.md), Math.max(width - 220 - spacing.md, spacing.md)),
+                    top: contextMenu.y - 12,
+                  },
+                ]}>
+                <Pressable
+                  style={styles.contextMenuItem}
+                  onPress={() => void handleProfileMenuAction('rename', contextMenu.kind === 'profile' ? contextMenu.profileId : '')}>
+                  <Text style={[styles.contextMenuText, textDirectionStyle]}>{t('editName')}</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.contextMenuItem}
+                  onPress={() => void handleProfileMenuAction('copy', contextMenu.kind === 'profile' ? contextMenu.profileId : '')}>
+                  <Text style={[styles.contextMenuText, textDirectionStyle]}>{t('copy')}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.contextMenuItem, styles.contextMenuItemDanger]}
+                  onPress={() => void handleProfileMenuAction('delete', contextMenu.kind === 'profile' ? contextMenu.profileId : '')}>
+                  <Text style={[styles.contextMenuText, textDirectionStyle, styles.contextMenuTextDanger]}>{t('deleteConfig')}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          <Modal transparent visible={renameDialog !== null} animationType="fade" onRequestClose={() => setRenameDialog(null)}>
+            <View style={styles.modalLayer}>
+              <Pressable style={styles.modalBackdrop} onPress={() => setRenameDialog(null)} />
+              <View style={styles.modalCard}>
+                <Text style={[styles.modalTitle, textDirectionStyle]}>{t('editConfigName')}</Text>
+                <TextInput
+                  placeholder={t('newName')}
+                  placeholderTextColor="rgba(244,247,249,0.40)"
+                  style={[styles.input, textDirectionStyle]}
+                  value={renameDialog?.value ?? ''}
+                  onChangeText={value =>
+                    setRenameDialog(current => (current ? {...current, value} : current))
+                  }
+                />
+                <View style={styles.modalActions}>
+                  <Pressable onPress={() => setRenameDialog(null)} style={styles.secondaryButtonCompact}>
+                    <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>{t('cancel')}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => void handleRenameSubmit()} style={styles.primaryButton}>
+                    <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>{t('save')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+          <Modal transparent visible={importDialogOpen} animationType="fade" onRequestClose={() => setImportDialogOpen(false)}>
+            {renderImportDialog()}
+          </Modal>
+
+          <Modal transparent visible={manualDialogOpen} animationType="fade" onRequestClose={closeManualDialog}>
+            <View style={styles.modalLayer}>
+              <Pressable style={styles.modalBackdrop} onPress={closeManualDialog} />
+              <View style={styles.modalCard}>
+                <Text style={[styles.modalTitle, textDirectionStyle]}>{t('manualConfig')}</Text>
+                <View style={styles.protocolRow}>
+                  {(['http', 'https', 'socks5'] as const).map(protocol => (
+                    <Pressable
+                      key={protocol}
+                      onPress={() => setManualProtocol(protocol)}
+                      style={[
+                        styles.protocolButton,
+                        manualProtocol === protocol && styles.protocolButtonActive,
+                      ]}>
+                      <Text style={styles.protocolButtonText}>{protocol.toUpperCase()}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput placeholder={t('displayNameOptional')} placeholderTextColor="rgba(244,247,249,0.40)" style={[styles.input, textDirectionStyle]} value={manualName} onChangeText={setManualName} />
+                <TextInput placeholder={t('address')} placeholderTextColor="rgba(244,247,249,0.40)" style={[styles.input, textDirectionStyle]} value={manualHost} onChangeText={setManualHost} autoCapitalize="none" />
+                <TextInput placeholder={t('port')} placeholderTextColor="rgba(244,247,249,0.40)" style={[styles.input, textDirectionStyle]} value={manualPort} onChangeText={setManualPort} keyboardType="number-pad" />
+                <TextInput placeholder={t('usernameOptional')} placeholderTextColor="rgba(244,247,249,0.40)" style={[styles.input, textDirectionStyle]} value={manualUsername} onChangeText={setManualUsername} autoCapitalize="none" />
+                <TextInput placeholder={t('passwordOptional')} placeholderTextColor="rgba(244,247,249,0.40)" style={[styles.input, textDirectionStyle]} value={manualPassword} onChangeText={setManualPassword} autoCapitalize="none" secureTextEntry />
+                <View style={styles.modalActions}>
+                  <Pressable onPress={closeManualDialog} style={styles.secondaryButtonCompact}>
+                    <Text style={[styles.secondaryButtonText, isPersian && styles.rtlButtonText]}>{t('cancel')}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => void handleManualImport()} style={styles.primaryButton}>
+                    <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>{t('addConfig')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </View>
+      </AppGradient>
+    );
+  }
 
   return (
     <AppGradient
@@ -1061,6 +1308,286 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(111, 232, 197, 0.10)',
     bottom: -80,
     left: -120
+  },
+  monitorShell: {
+    flex: 1,
+    paddingHorizontal: 32,
+    paddingBottom: 32,
+    backgroundColor: 'rgba(6, 10, 16, 0.96)',
+  },
+  monitorHeader: {
+    height: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 96,
+  },
+  monitorHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  monitorConfigTitle: {
+    color: colors.textPrimary,
+    fontSize: 32,
+    lineHeight: 38,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
+  monitorConfigMeta: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  monitorAddButton: {
+    position: 'absolute',
+    top: 26,
+    right: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+  },
+  monitorAddButtonText: {
+    color: colors.textPrimary,
+    fontSize: 38,
+    lineHeight: 42,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  monitorMain: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingRight: 164,
+    paddingBottom: 104,
+  },
+  monitorConfigsCard: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: radii.lg,
+    borderColor: colors.border,
+  },
+  monitorConfigsInner: {
+    flex: 1,
+    padding: spacing.lg,
+    backgroundColor: 'rgba(8, 14, 22, 0.98)',
+  },
+  monitorSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  monitorSectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
+  monitorMiniButton: {
+    minHeight: 40,
+    minWidth: 116,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  monitorMiniButtonActive: {
+    borderColor: colors.warning,
+  },
+  monitorMiniButtonText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  monitorConfigScroll: {
+    flex: 1,
+    marginTop: spacing.lg,
+  },
+  monitorConfigList: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  monitorProfileRow: {
+    minHeight: 74,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
+  },
+  monitorProfileIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  monitorProfileIconText: {
+    color: colors.accent,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+    includeFontPadding: false,
+  },
+  monitorProfileMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  monitorProfileTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: '900',
+  },
+  monitorProfileSubtitle: {
+    color: colors.textSecondary,
+    marginTop: 3,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+  monitorProfilePing: {
+    minWidth: 70,
+    textAlign: 'right',
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '900',
+    includeFontPadding: false,
+  },
+  monitorDock: {
+    position: 'absolute',
+    left: 32,
+    right: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    zIndex: 22,
+  },
+  monitorDockPanel: {
+    height: 78,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(8, 14, 22, 0.98)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    shadowOffset: {width: 0, height: 8},
+    elevation: 6,
+  },
+  monitorLocationPanel: {
+    minWidth: 300,
+    maxWidth: 420,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  monitorPingPanel: {
+    minWidth: 190,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  monitorFlagButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  monitorFlagText: {
+    color: colors.textPrimary,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '900',
+  },
+  monitorCountryCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  monitorCountryTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '900',
+  },
+  monitorCountryMeta: {
+    color: colors.textSecondary,
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  monitorPingValue: {
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '900',
+    includeFontPadding: false,
+  },
+  monitorPingMeta: {
+    color: colors.textSecondary,
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  monitorConnectButton: {
+    position: 'absolute',
+    right: 32,
+    top: '50%',
+    width: 126,
+    height: 126,
+    marginTop: -63,
+    borderRadius: 63,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(12, 19, 28, 0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 24,
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    shadowOffset: {width: 0, height: 0},
+    elevation: 8,
+  },
+  monitorConnectButtonActive: {
+    borderColor: 'rgba(123,255,178,0.48)',
+    backgroundColor: 'rgba(57,217,138,0.14)',
+  },
+  monitorConnectButtonConnecting: {
+    borderColor: 'rgba(255,211,106,0.45)',
+    backgroundColor: 'rgba(255,159,67,0.14)',
+  },
+  monitorConnectIcon: {
+    fontSize: 66,
+    lineHeight: 76,
+    fontWeight: '900',
+    includeFontPadding: false,
+  },
+  monitorConnectIconImage: {
+    width: 78,
+    height: 78,
   },
   shell: {
     flex: 1,
@@ -1873,6 +2400,38 @@ function mobilePingColorStyle(pingMs?: number, timedOut?: boolean) {
   }
 
   return pingColorStyle(pingMs);
+}
+
+function monitorCountryLabel(
+  connected: boolean,
+  connecting: boolean,
+  country: string | undefined,
+  countryCode: string | undefined,
+  t: (key: TranslationKey) => string,
+) {
+  if (connected) {
+    return country || countryCode || t('connected');
+  }
+
+  return connecting ? t('connecting') : t('disconnected');
+}
+
+function pingStampColorStyle(
+  profileId: string,
+  pingResults: Record<string, number | 'TO' | 'PINGING'> | null,
+  latencyMs?: number,
+) {
+  const ping = pingResults?.[profileId];
+  if (ping === 'PINGING') {
+    return {color: colors.info};
+  }
+  if (ping === 'TO') {
+    return {color: colors.danger};
+  }
+  if (typeof ping === 'number') {
+    return pingColorStyle(ping);
+  }
+  return pingColorStyle(latencyMs);
 }
 
 function countryCodeToFlag(countryCode: string) {

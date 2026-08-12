@@ -60,6 +60,22 @@ struct ProfileSummary: Identifiable, Codable {
     }
 }
 
+struct SubscriptionSummary: Identifiable, Codable {
+    let id: String
+    var title: String
+    var url: String
+    var profileIDs: [String]
+    var updatedAt: Date
+
+    init(id: String, title: String, url: String, profileIDs: [String], updatedAt: Date) {
+        self.id = id
+        self.title = title
+        self.url = url
+        self.profileIDs = profileIDs
+        self.updatedAt = updatedAt
+    }
+}
+
 struct TunnelSnapshot {
     var connected = false
     var connecting = false
@@ -69,6 +85,9 @@ struct TunnelSnapshot {
     var selectedNodeID: String?
     var lastError: String?
     var lastConnectedAt: Date?
+    var exitIP: String?
+    var countryCode: String?
+    var countryName: String?
 }
 
 struct AppRuleViewModel: Identifiable, Codable {
@@ -114,4 +133,11 @@ struct AppRuleViewModel: Identifiable, Codable {
     var coreRule: AppRouteRule {
         AppRouteRule(bundleId: bundleId, name: name, processName: processName, enabled: enabled)
     }
+}
+
+enum ProfilePingState: Equatable {
+    case idle
+    case pinging
+    case latency(Int)
+    case timeout
 }

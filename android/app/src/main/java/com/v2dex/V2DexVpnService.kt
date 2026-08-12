@@ -3,6 +3,7 @@ package com.v2dex
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -31,7 +32,7 @@ class V2DexVpnService : TProxyService() {
   private var tun2socksRunning = false
   private val serviceExecutor =
       Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "v2dex-vpn-worker").apply { isDaemon = true }
+        Thread(runnable, "v2dex-vpn-worker")
       }
 
   override fun onCreate() {
@@ -45,14 +46,38 @@ class V2DexVpnService : TProxyService() {
         val configJson = intent.getStringExtra(EXTRA_CONFIG_JSON) ?: "{}"
         val mode = intent.getStringExtra(EXTRA_MODE) ?: "full"
         val appRulesJson = intent.getStringExtra(EXTRA_APP_RULES_JSON) ?: "[]"
+        persistLastStart(configJson, mode, appRulesJson)
         status = status.copy(connecting = true, lastError = null, mode = mode, backend = "vpn")
         startForeground(NOTIFICATION_ID, buildNotification("Connecting"))
         serviceExecutor.execute { startXray(configJson, mode, appRulesJson) }
       }
-      ACTION_STOP -> requestStopXray()
+      ACTION_STOP -> {
+        clearLastStart()
+        requestStopXray()
+      }
+      else -> {
+        val lastStart = loadLastStart()
+        if (lastStart != null && !status.connected && !status.connecting) {
+          status =
+              status.copy(
+                  connecting = true,
+                  lastError = null,
+                  mode = lastStart.mode,
+                  backend = "vpn")
+          startForeground(NOTIFICATION_ID, buildNotification("Reconnecting"))
+          serviceExecutor.execute {
+            startXray(lastStart.configJson, lastStart.mode, lastStart.appRulesJson)
+          }
+        }
+      }
     }
 
-    return START_NOT_STICKY
+    return START_STICKY
+  }
+
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    Log.d("V2DexVpnService", "App task removed; keeping VPN service alive.")
+    super.onTaskRemoved(rootIntent)
   }
 
   override fun onDestroy() {
@@ -105,7 +130,10 @@ class V2DexVpnService : TProxyService() {
       val detachedTunFd = vpn.detachFd()
       vpnInterface = null
       tunFd = detachedTunFd
-      TProxyStartService(tunnelConfig.absolutePath, detachedTunFd)
+      ensureNativeLoaded()
+      if (!TProxyStartService(tunnelConfig.absolutePath, detachedTunFd)) {
+        throw IllegalStateException("tun2socks could not be started.")
+      }
       tun2socksRunning = true
 
       status =
@@ -119,7 +147,7 @@ class V2DexVpnService : TProxyService() {
               binaryPath = binary.absolutePath)
       startForeground(NOTIFICATION_ID, buildNotification("Connected"))
       Log.d("V2DexVpnService", "VPN + Xray started binary=${binary.absolutePath}")
-    } catch (error: Exception) {
+    } catch (error: Throwable) {
       Log.e("V2DexVpnService", "Xray start failed", error)
       stopTun2socks()
       stopXrayProcess()
@@ -144,6 +172,39 @@ class V2DexVpnService : TProxyService() {
             backend = "vpn")
     serviceExecutor.execute { stopXray() }
   }
+
+  private fun persistLastStart(configJson: String, mode: String, appRulesJson: String) {
+    prefs()
+        .edit()
+        .putString(PREF_CONFIG_JSON, configJson)
+        .putString(PREF_MODE, mode)
+        .putString(PREF_APP_RULES_JSON, appRulesJson)
+        .apply()
+  }
+
+  private fun clearLastStart() {
+    prefs()
+        .edit()
+        .remove(PREF_CONFIG_JSON)
+        .remove(PREF_MODE)
+        .remove(PREF_APP_RULES_JSON)
+        .apply()
+  }
+
+  private fun loadLastStart(): LastStart? {
+    val prefs = prefs()
+    val configJson = prefs.getString(PREF_CONFIG_JSON, null)
+    if (configJson.isNullOrBlank()) {
+      return null
+    }
+
+    return LastStart(
+        configJson = configJson,
+        mode = prefs.getString(PREF_MODE, "full") ?: "full",
+        appRulesJson = prefs.getString(PREF_APP_RULES_JSON, "[]") ?: "[]")
+  }
+
+  private fun prefs() = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
   private fun stopXray() {
     stopTun2socks()
@@ -274,8 +335,9 @@ class V2DexVpnService : TProxyService() {
   private fun stopTun2socks() {
     if (tun2socksRunning) {
       try {
+        ensureNativeLoaded()
         TProxyStopService()
-      } catch (error: Exception) {
+      } catch (error: Throwable) {
         Log.w("V2DexVpnService", "tun2socks stop failed", error)
       }
       tun2socksRunning = false
@@ -403,7 +465,17 @@ class V2DexVpnService : TProxyService() {
       val binaryPath: String? = null,
   )
 
+  private data class LastStart(
+      val configJson: String,
+      val mode: String,
+      val appRulesJson: String,
+  )
+
   companion object {
+    private const val PREFS_NAME = "v2dex_vpn_service"
+    private const val PREF_CONFIG_JSON = "configJson"
+    private const val PREF_MODE = "mode"
+    private const val PREF_APP_RULES_JSON = "appRulesJson"
     private const val NOTIFICATION_CHANNEL_ID = "v2dex_tunnel"
     private const val NOTIFICATION_ID = 43080
     private const val VPN_MTU = 1280

@@ -8,9 +8,9 @@ struct V2DexApp: App {
         WindowGroup {
             DashboardView()
                 .environmentObject(store)
-                .frame(minWidth: 1220, minHeight: 760)
+                .frame(minWidth: 460, minHeight: 760)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1360, height: 860)
+        .defaultSize(width: 520, height: 900)
     }
 }

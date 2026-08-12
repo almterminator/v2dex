@@ -8,17 +8,27 @@ final class AppStore: ObservableObject {
     @Published var selection: SidebarSection = .overview
     @Published var tunnel = TunnelSnapshot()
     @Published var profiles: [ProfileSummary] = DemoData.profiles
+    @Published var subscriptions: [SubscriptionSummary] = []
     @Published var appRules: [AppRuleViewModel] = DemoData.appRules
     @Published var searchText = ""
     @Published var statusLine = "Ready"
     @Published var configPreview = "{}"
+    @Published var lastPingMs: Int?
+    @Published var lastPingProfileID: String?
+    @Published var pinging = false
+    @Published var pingingAll = false
+    @Published var pingingSubscriptionIDs: Set<String> = []
+    @Published var collapsedSubscriptionIDs: Set<String> = []
+    @Published var profilePingStates: [String: ProfilePingState] = [:]
 
     private struct PersistedAppState: Codable {
         var profiles: [ProfileSummary]
+        var subscriptions: [SubscriptionSummary]
         var appRules: [AppRuleViewModel]
         var activeProfileId: String?
         var activeNodeId: String?
         var mode: TunnelMode?
+        var collapsedSubscriptionIDs: [String]?
     }
 
     var activeProfile: ProfileSummary? {
@@ -38,58 +48,47 @@ final class AppStore: ObservableObject {
     }
 
     func toggleConnection() {
-        if tunnel.connected {
-            tunnel.connecting = true
-            statusLine = "Stopping local proxy runtime..."
-            Task {
-                do {
-                    try SingboxRuntime.shared.stopIfNeeded()
-                    await MainActor.run {
-                        tunnel.connected = false
-                        tunnel.connecting = false
-                        tunnel.lastError = nil
-                        statusLine = "System proxy disconnected"
-                    }
-                } catch {
-                    await MainActor.run {
-                        tunnel.connected = false
-                        tunnel.connecting = false
-                        tunnel.lastError = error.localizedDescription
-                        statusLine = "Disconnect failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-            return
+        if tunnel.connected || tunnel.connecting {
+            disconnect()
+        } else {
+            connect()
         }
+    }
 
+    func connect() {
         guard let node = activeNode else {
-            tunnel.lastError = "No active node"
-            statusLine = "No active node"
+            tunnel.lastError = "No config selected"
+            statusLine = "No config selected"
             return
         }
 
         tunnel.connecting = true
-        statusLine = "Starting local proxy runtime..."
+        tunnel.lastError = nil
+        statusLine = "Starting local proxy..."
 
         Task {
             do {
                 let configData = try SingboxConfigBuilder.build(
                     node: node,
-                    mode: tunnel.mode,
+                    mode: .full,
                     appRules: appRules.map(\.coreRule)
                 )
                 let snapshot = try SingboxRuntime.shared.start(
                     configData: configData,
-                    mode: tunnel.mode,
+                    mode: .full,
                     appRules: appRules.map(\.coreRule)
                 )
+
                 await MainActor.run {
                     tunnel.connecting = snapshot.connecting
                     tunnel.connected = snapshot.connected
                     tunnel.lastConnectedAt = snapshot.lastConnectedAt ?? Date()
                     tunnel.lastError = nil
-                    statusLine = "macOS proxy active via \(node.name)"
+                    statusLine = "Connected locally via \(node.name). Checking exit location..."
                 }
+
+                await refreshExitLocation(afterConnectingTo: node)
+                await runActivePing()
             } catch {
                 await MainActor.run {
                     tunnel.connecting = false
@@ -101,28 +100,63 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func disconnect() {
+        tunnel.connecting = true
+        statusLine = "Disconnecting..."
+
+        Task {
+            do {
+                try SingboxRuntime.shared.stopIfNeeded()
+                await MainActor.run {
+                    tunnel.connected = false
+                    tunnel.connecting = false
+                    tunnel.lastError = nil
+                    tunnel.exitIP = nil
+                    tunnel.countryCode = nil
+                    tunnel.countryName = nil
+                    statusLine = "Disconnected. Wi-Fi proxies are off."
+                }
+            } catch {
+                await MainActor.run {
+                    tunnel.connected = false
+                    tunnel.connecting = false
+                    tunnel.lastError = error.localizedDescription
+                    tunnel.exitIP = nil
+                    tunnel.countryCode = nil
+                    tunnel.countryName = nil
+                    statusLine = "Disconnected with cleanup warning: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func setMode(_ mode: TunnelMode) {
         tunnel.mode = mode
-        statusLine = mode == .full ? "System proxy enabled" : "App filter preview enabled"
+        statusLine = mode == .full ? "System proxy enabled" : "App filter preview disabled on macOS without Network Extension"
         refreshConfigPreview()
+        persistState()
     }
 
     func selectProfile(_ profile: ProfileSummary) {
         tunnel.selectedProfileID = profile.id
         tunnel.selectedNodeID = profile.nodes.first?.id
+        statusLine = "Selected \(profile.title)"
         refreshConfigPreview()
+        persistState()
     }
 
     func selectNode(_ node: ProxyNode) {
         tunnel.selectedNodeID = node.id
         statusLine = "Selected \(node.name)"
         refreshConfigPreview()
+        persistState()
     }
 
     func toggleRule(_ rule: AppRuleViewModel) {
         guard let index = appRules.firstIndex(where: { $0.id == rule.id }) else { return }
         appRules[index].enabled.toggle()
         refreshConfigPreview()
+        persistState()
     }
 
     func importFromClipboard() {
@@ -131,119 +165,268 @@ final class AppStore: ObservableObject {
             statusLine = "Clipboard is empty"
             return
         }
-        statusLine = "Importing from clipboard..."
-
-        Task {
-            do {
-                let importedNodes = try await SubscriptionImporter.importRaw(raw)
-                let profile = ProfileSummary(
-                    id: UUID().uuidString,
-                    title: "Imported Clipboard Profile",
-                    source: "Clipboard",
-                    updatedAt: Date(),
-                    trafficUsedGB: 0,
-                    trafficTotalGB: 0,
-                    nodes: importedNodes
-                )
-                profiles.insert(profile, at: 0)
-                selectProfile(profile)
-                statusLine = "Imported \(importedNodes.count) node(s) from clipboard"
-            } catch {
-                statusLine = "Clipboard import failed: \(error.localizedDescription)"
-            }
-        }
+        importSubscriptionLink(raw)
     }
 
     func importSubscriptionLink(_ link: String) {
         let cleaned = link.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
-            statusLine = "Enter a subscription or URI first"
+            statusLine = "VLESS URI or subscription URL"
             return
         }
-        statusLine = "Importing profile..."
+
+        let isSubscription = cleaned.lowercased().hasPrefix("http://") || cleaned.lowercased().hasPrefix("https://")
+        if isSubscription {
+            statusLine = "Importing subscription..."
+        } else {
+            statusLine = "Importing config..."
+        }
 
         Task {
             do {
-                let importedNodes = try await SubscriptionImporter.importRaw(cleaned)
-                let profile = ProfileSummary(
-                    id: UUID().uuidString,
-                    title: cleaned.contains("http") ? "Subscription Profile" : "Manual URI Profile",
-                    source: cleaned.contains("http") ? "Subscription" : "URI",
-                    updatedAt: Date(),
-                    trafficUsedGB: Double.random(in: 24...180),
-                    trafficTotalGB: 300,
-                    nodes: importedNodes
-                )
-                profiles.insert(profile, at: 0)
-                selectProfile(profile)
-                statusLine = "Imported profile from \(profile.source.lowercased())"
+                let payload = try await SubscriptionImporter.importProfile(cleaned)
+                let importedProfiles = payload.nodes.map { node in
+                    ProfileSummary(
+                        id: UUID().uuidString,
+                        title: node.name,
+                        source: isSubscription ? "Subscription" : "URI",
+                        updatedAt: Date(),
+                        trafficUsedGB: 0,
+                        trafficTotalGB: Double(payload.usage?.totalBytes ?? 0) / 1_073_741_824,
+                        nodes: [node]
+                    )
+                }
+
+                await MainActor.run {
+                    profiles.insert(contentsOf: importedProfiles, at: 0)
+                    if isSubscription {
+                        let subscription = SubscriptionSummary(
+                            id: "sub-\(UUID().uuidString)",
+                            title: subscriptionTitle(from: cleaned),
+                            url: cleaned,
+                            profileIDs: importedProfiles.map(\.id),
+                            updatedAt: Date()
+                        )
+                        subscriptions.insert(subscription, at: 0)
+                    }
+                    if let first = importedProfiles.first {
+                        selectProfile(first)
+                    }
+                    statusLine = "Imported \(importedProfiles.count) config(s)"
+                    persistState()
+                }
             } catch {
-                statusLine = "Import failed: \(error.localizedDescription)"
+                await MainActor.run {
+                    statusLine = isSubscription
+                        ? "Subscription import failed: \(error.localizedDescription)"
+                        : "Import failed: \(error.localizedDescription)"
+                }
             }
         }
     }
 
-    func discoverApplications() {
-        let appDirectories = [
-            URL(fileURLWithPath: "/Applications"),
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
-        ]
+    func updateSubscription(_ subscription: SubscriptionSummary) {
+        guard !pingingSubscriptionIDs.contains(subscription.id) else { return }
+        pingingSubscriptionIDs.insert(subscription.id)
+        statusLine = "Updating \(subscription.title)..."
 
-        var discovered: [AppRuleViewModel] = []
-        let fileManager = FileManager.default
+        Task {
+            do {
+                let payload = try await SubscriptionImporter.importProfile(subscription.url)
+                let refreshedProfiles = payload.nodes.map { node in
+                    ProfileSummary(
+                        id: UUID().uuidString,
+                        title: node.name,
+                        source: "Subscription",
+                        updatedAt: Date(),
+                        trafficUsedGB: 0,
+                        trafficTotalGB: Double(payload.usage?.totalBytes ?? 0) / 1_073_741_824,
+                        nodes: [node]
+                    )
+                }
 
-        for directory in appDirectories {
-            guard let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
-                continue
+                await MainActor.run {
+                    let oldIDs = Set(subscription.profileIDs)
+                    profiles.removeAll { oldIDs.contains($0.id) }
+                    profiles.insert(contentsOf: refreshedProfiles, at: 0)
+                    if let index = subscriptions.firstIndex(where: { $0.id == subscription.id }) {
+                        subscriptions[index].profileIDs = refreshedProfiles.map(\.id)
+                        subscriptions[index].updatedAt = Date()
+                    }
+                    if let first = refreshedProfiles.first {
+                        selectProfile(first)
+                    }
+                    pingingSubscriptionIDs.remove(subscription.id)
+                    statusLine = "Updated \(refreshedProfiles.count) configs from \(subscription.title)"
+                    persistState()
+                }
+            } catch {
+                await MainActor.run {
+                    pingingSubscriptionIDs.remove(subscription.id)
+                    statusLine = "Update failed for \(subscription.title): \(error.localizedDescription)"
+                }
             }
+        }
+    }
 
-            for case let url as URL in enumerator {
-                guard url.pathExtension == "app" else { continue }
-                guard let bundle = Bundle(url: url) else { continue }
-                let bundleId = bundle.bundleIdentifier ?? url.deletingPathExtension().lastPathComponent
-                let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                    ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
-                    ?? url.deletingPathExtension().lastPathComponent
-                let executable = bundle.object(forInfoDictionaryKey: "CFBundleExecutable") as? String ?? name
-                discovered.append(.init(bundleId: bundleId, name: name, processName: executable, enabled: false))
-                if discovered.count >= 40 {
-                    break
+    func renameProfile(_ profile: ProfileSummary) {
+        promptRename(title: "Rename Config", message: "Enter a new name for this config.", placeholder: "Config name", value: profile.title) { [weak self] newTitle in
+            guard let self, let index = self.profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+            self.profiles[index].title = newTitle
+            self.statusLine = "Renamed config to \(newTitle)"
+            self.persistState()
+        }
+    }
+
+    func deleteProfile(_ profile: ProfileSummary) {
+        profiles.removeAll { $0.id == profile.id }
+        subscriptions = subscriptions.map { subscription in
+            var copy = subscription
+            copy.profileIDs.removeAll { $0 == profile.id }
+            return copy
+        }.filter { !$0.profileIDs.isEmpty }
+        if tunnel.selectedProfileID == profile.id {
+            tunnel.selectedProfileID = profiles.first?.id
+            tunnel.selectedNodeID = profiles.first?.nodes.first?.id
+        }
+        statusLine = "Deleted \(profile.title)"
+        refreshConfigPreview()
+        persistState()
+    }
+
+    func renameSubscription(_ subscription: SubscriptionSummary) {
+        promptRename(title: "Rename Subscription", message: "Enter a new name for this subscription.", placeholder: "Subscription name", value: subscription.title) { [weak self] newTitle in
+            guard let self, let index = self.subscriptions.firstIndex(where: { $0.id == subscription.id }) else { return }
+            self.subscriptions[index].title = newTitle
+            self.statusLine = "Renamed subscription to \(newTitle)"
+            self.persistState()
+        }
+    }
+
+    func deleteSubscription(_ subscription: SubscriptionSummary) {
+        let profileIDs = Set(subscription.profileIDs)
+        subscriptions.removeAll { $0.id == subscription.id }
+        profiles.removeAll { profileIDs.contains($0.id) }
+        if let active = tunnel.selectedProfileID, profileIDs.contains(active) {
+            tunnel.selectedProfileID = profiles.first?.id
+            tunnel.selectedNodeID = profiles.first?.nodes.first?.id
+        }
+        statusLine = "Deleted subscription \(subscription.title)"
+        refreshConfigPreview()
+        persistState()
+    }
+
+    func toggleSubscriptionCollapsed(_ subscription: SubscriptionSummary) {
+        if collapsedSubscriptionIDs.contains(subscription.id) {
+            collapsedSubscriptionIDs.remove(subscription.id)
+        } else {
+            collapsedSubscriptionIDs.insert(subscription.id)
+        }
+        persistState()
+    }
+
+    func pingProfile(_ profile: ProfileSummary) {
+        guard let node = profile.nodes.first else { return }
+        profilePingStates[profile.id] = .pinging
+        statusLine = "Pinging \(profile.title)..."
+
+        Task {
+            do {
+                let latency = try await measuredLatency(for: node, profileID: profile.id)
+                await MainActor.run {
+                    profilePingStates[profile.id] = latency > 850 ? .timeout : .latency(latency)
+                    lastPingMs = latency
+                    lastPingProfileID = profile.id
+                    statusLine = latency > 850 ? "Ping failed for \(profile.title)" : "Pinged \(profile.title) in \(latency) ms"
+                    sortProfilesByPing()
+                    persistState()
+                }
+            } catch {
+                await MainActor.run {
+                    profilePingStates[profile.id] = .timeout
+                    statusLine = "Ping failed for \(profile.title)"
+                }
+            }
+        }
+    }
+
+    func pingAllProfiles() {
+        guard !pingingAll else { return }
+        pingingAll = true
+        statusLine = "Pinging all configs one by one..."
+        profiles.forEach { profilePingStates[$0.id] = .pinging }
+
+        Task {
+            for profile in profiles {
+                guard let node = profile.nodes.first else {
+                    await MainActor.run { profilePingStates[profile.id] = .timeout }
+                    continue
+                }
+
+                do {
+                    let latency = try await measuredLatency(for: node, profileID: profile.id)
+                    await MainActor.run {
+                        profilePingStates[profile.id] = latency > 850 ? .timeout : .latency(latency)
+                        sortProfilesByPing()
+                    }
+                } catch {
+                    await MainActor.run {
+                        profilePingStates[profile.id] = .timeout
+                        sortProfilesByPing()
+                    }
                 }
             }
 
-            if discovered.count >= 40 {
-                break
+            await MainActor.run {
+                pingingAll = false
+                statusLine = "Ping all complete."
+                persistState()
             }
         }
+    }
 
-        if !discovered.isEmpty {
-            let merged = Dictionary(uniqueKeysWithValues: (appRules + discovered).map { ($0.id, $0) })
-            appRules = merged.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            statusLine = "Discovered \(discovered.count) applications"
-            refreshConfigPreview()
+    func pingSubscription(_ subscription: SubscriptionSummary) {
+        guard !pingingSubscriptionIDs.contains(subscription.id) else { return }
+        pingingSubscriptionIDs.insert(subscription.id)
+        statusLine = "Pinging \(subscription.title) one by one..."
+
+        let subscriptionProfiles = profiles.filter { subscription.profileIDs.contains($0.id) }
+        subscriptionProfiles.forEach { profilePingStates[$0.id] = .pinging }
+
+        Task {
+            for profile in subscriptionProfiles {
+                guard let node = profile.nodes.first else {
+                    await MainActor.run { profilePingStates[profile.id] = .timeout }
+                    continue
+                }
+                do {
+                    let latency = try await measuredLatency(for: node, profileID: profile.id)
+                    await MainActor.run {
+                        profilePingStates[profile.id] = latency > 850 ? .timeout : .latency(latency)
+                        sortProfilesByPing()
+                    }
+                } catch {
+                    await MainActor.run {
+                        profilePingStates[profile.id] = .timeout
+                        sortProfilesByPing()
+                    }
+                }
+            }
+
+            await MainActor.run {
+                pingingSubscriptionIDs.remove(subscription.id)
+                statusLine = "Ping complete for \(subscription.title)"
+                persistState()
+            }
         }
     }
 
     func runLatencyTest() {
-        guard let node = activeNode else {
-            statusLine = "No active profile"
+        guard let activeProfile else {
+            statusLine = "No imported config yet."
             return
         }
-
-        statusLine = "Testing \(node.name)..."
-
-        Task {
-            do {
-                let result = try await ConnectivityTester.testProxyHTTPProbe(to: node)
-                await MainActor.run {
-                    statusLine = "Ping \(result.latencyMs) ms via \(result.url)"
-                }
-            } catch {
-                await MainActor.run {
-                    statusLine = "Ping failed: \(error.localizedDescription)"
-                }
-            }
-        }
+        pingProfile(activeProfile)
     }
 
     func refreshConfigPreview() {
@@ -255,13 +438,153 @@ final class AppStore: ObservableObject {
         do {
             let data = try SingboxConfigBuilder.build(
                 node: node,
-                mode: tunnel.mode,
+                mode: .full,
                 appRules: appRules.map(\.coreRule)
             )
             configPreview = String(decoding: data, as: UTF8.self)
         } catch {
             configPreview = "{\n  \"error\": \"\(error.localizedDescription)\"\n}"
         }
+    }
+
+    func discoverApplications() {
+        statusLine = "Per-app routing requires a signed Network Extension on macOS."
+    }
+
+    var filteredRules: [AppRuleViewModel] {
+        let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return appRules }
+        return appRules.filter {
+            $0.name.localizedCaseInsensitiveContains(term) ||
+            $0.processName.localizedCaseInsensitiveContains(term) ||
+            $0.bundleId.localizedCaseInsensitiveContains(term)
+        }
+    }
+
+    private func runActivePing() async {
+        guard let activeProfile else { return }
+        await MainActor.run {
+            pinging = true
+            profilePingStates[activeProfile.id] = .pinging
+            statusLine = "Pinging \(activeProfile.title)..."
+        }
+
+        do {
+            let latency = try await measuredLatency(for: activeProfile.nodes[0], profileID: activeProfile.id)
+            await MainActor.run {
+                pinging = false
+                profilePingStates[activeProfile.id] = latency > 850 ? .timeout : .latency(latency)
+                lastPingMs = latency
+                lastPingProfileID = activeProfile.id
+                statusLine = latency > 850 ? "Ping failed for \(activeProfile.title)" : "Pinged \(activeProfile.title) in \(latency) ms"
+                sortProfilesByPing()
+            }
+        } catch {
+            await MainActor.run {
+                pinging = false
+                profilePingStates[activeProfile.id] = .timeout
+                statusLine = "Ping failed for \(activeProfile.title)"
+            }
+        }
+    }
+
+    private func measuredLatency(for node: ProxyNode, profileID: String?) async throws -> Int {
+        if tunnel.connected,
+           profileID == nil || profileID == activeProfile?.id,
+           let proxyPort = SingboxConfigBuilder.localProxyPort as Int? {
+            let result = try await ConnectivityTester.testHTTPViaLocalProxy(
+                url: "https://www.youtube.com/generate_204",
+                proxyHost: SingboxConfigBuilder.loopbackProxyHost,
+                proxyPort: proxyPort,
+                timeout: 1
+            )
+            return result.latencyMs
+        }
+
+        let result = try await ConnectivityTester.testProxyHTTPProbe(to: node, timeout: 1)
+        return result.latencyMs
+    }
+
+    private func refreshExitLocation(afterConnectingTo node: ProxyNode) async {
+        do {
+            let response = try await ConnectivityTester.fetchTextViaLocalProxy(
+                url: "https://ipwho.is/",
+                proxyHost: SingboxConfigBuilder.loopbackProxyHost,
+                proxyPort: SingboxConfigBuilder.localProxyPort,
+                timeout: 8
+            )
+            let location = parseLocationPayload(response)
+            await MainActor.run {
+                tunnel.exitIP = location.ip
+                tunnel.countryCode = location.countryCode
+                tunnel.countryName = location.countryName
+                statusLine = "Connected via \(node.name)"
+            }
+        } catch {
+            await MainActor.run {
+                statusLine = "Connected via \(node.name), but exit country lookup failed."
+            }
+        }
+    }
+
+    private func parseLocationPayload(_ response: String) -> (ip: String?, countryCode: String?, countryName: String?) {
+        guard let data = response.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return (nil, nil, nil)
+        }
+
+        let ip = json["ip"] as? String ?? json["query"] as? String
+        let countryCode = json["country_code"] as? String ?? json["countryCode"] as? String
+        let countryName = json["country"] as? String ?? json["country_name"] as? String
+        return (ip, countryCode?.uppercased(), countryName)
+    }
+
+    private func sortProfilesByPing() {
+        profiles.sort { lhs, rhs in
+            pingSortValue(lhs.id) < pingSortValue(rhs.id)
+        }
+    }
+
+    private func pingSortValue(_ profileID: String) -> Int {
+        switch profilePingStates[profileID] {
+        case let .latency(ms):
+            return ms
+        case .timeout:
+            return 10_000
+        case .pinging:
+            return 9_000
+        case .idle, .none:
+            return 8_000
+        }
+    }
+
+    private func subscriptionTitle(from value: String) -> String {
+        guard let url = URL(string: value), let host = url.host else {
+            return "Subscription"
+        }
+        let lastPath = url.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return lastPath.isEmpty ? host : lastPath
+    }
+
+    private func persistState() {
+        let state = PersistedAppState(
+            profiles: profiles,
+            subscriptions: subscriptions,
+            appRules: appRules,
+            activeProfileId: tunnel.selectedProfileID,
+            activeNodeId: tunnel.selectedNodeID,
+            mode: tunnel.mode,
+            collapsedSubscriptionIDs: Array(collapsedSubscriptionIDs)
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(state),
+              let raw = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        UserDefaults.standard.set(raw, forKey: "v2dex.persisted.app.state")
     }
 
     private func loadPersistedState() {
@@ -289,7 +612,7 @@ final class AppStore: ObservableObject {
 
             throw DecodingError.dataCorruptedError(
                 in: container,
-                debugDescription: "Invalid ISO8601 date: \(value)"
+                debugDescription: "Invalid date"
             )
         }
 
@@ -301,22 +624,39 @@ final class AppStore: ObservableObject {
         if !state.profiles.isEmpty {
             profiles = state.profiles
         }
+        subscriptions = state.subscriptions
         if !state.appRules.isEmpty {
             appRules = state.appRules
         }
         tunnel.selectedProfileID = state.activeProfileId
         tunnel.selectedNodeID = state.activeNodeId
         tunnel.mode = state.mode ?? .full
-        statusLine = "Loaded saved profile"
+        collapsedSubscriptionIDs = Set(state.collapsedSubscriptionIDs ?? [])
+        statusLine = "Loaded saved config"
     }
 
-    var filteredRules: [AppRuleViewModel] {
-        let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !term.isEmpty else { return appRules }
-        return appRules.filter {
-            $0.name.localizedCaseInsensitiveContains(term) ||
-            $0.processName.localizedCaseInsensitiveContains(term) ||
-            $0.bundleId.localizedCaseInsensitiveContains(term)
+    private func promptRename(
+        title: String,
+        message: String,
+        placeholder: String,
+        value: String,
+        onSave: @escaping (String) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        input.placeholderString = placeholder
+        input.stringValue = value
+        alert.accessoryView = input
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let cleaned = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty else { return }
+            onSave(cleaned)
         }
     }
 }
