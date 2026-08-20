@@ -50,6 +50,7 @@ Published releases include:
 
 See [desktop-bootstrap.md](docs/desktop-bootstrap.md) for the desktop bootstrap flow.
 See [installers-status.md](docs/installers-status.md) for the exact current installer state.
+See [restore-from-github.md](docs/restore-from-github.md) before deleting a local working copy.
 
 ## Current build output
 
