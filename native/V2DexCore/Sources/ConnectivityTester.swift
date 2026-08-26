@@ -34,10 +34,16 @@ public enum ConnectivityTester {
 
         do {
             try process.run()
-            try await waitForTCPPort(host: SingboxConfigBuilder.loopbackProxyHost, port: proxyPort)
+            try await waitForTCPPort(
+                host: SingboxConfigBuilder.loopbackProxyHost,
+                port: proxyPort,
+                timeout: min(max(timeout, 1.0), 1.4)
+            )
 
             var lastError: Error?
-            for url in probeURLs {
+            let urlsToTry = timeout <= 1.1 ? Array(probeURLs.prefix(1)) : probeURLs
+            for url in urlsToTry {
+                guard !Task.isCancelled else { throw TestError.cancelled }
                 do {
                     return try await testHTTPViaLocalProxy(
                         url: url,
@@ -116,7 +122,7 @@ public enum ConnectivityTester {
                 "--write-out",
                 "%{http_code}",
                 "--max-time",
-                String(Int(timeout)),
+                String(format: "%.2f", timeout),
                 "--proxy",
                 "socks5h://\(proxyHost):\(proxyPort)",
                 url

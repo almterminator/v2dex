@@ -24,6 +24,8 @@ final class AppStore: ObservableObject {
     private var routerSocksProxyActive = false
 
     nonisolated private static let routerSocksPort = 43_080
+    nonisolated private static let pingBatchSize = 5
+    nonisolated private static let proxyPingTimeout: TimeInterval = 1
 
     private struct PersistedAppState: Codable {
         var profiles: [ProfileSummary]
@@ -451,29 +453,11 @@ final class AppStore: ObservableObject {
         }
 
         pingingAll = true
-        statusLine = "Pinging all configs one by one..."
+        statusLine = "Pinging saved configs..."
         targets.forEach { profilePingStates[$0.id] = .pinging }
 
         Task {
-            for profile in targets {
-                guard let node = profile.nodes.first else {
-                    await MainActor.run { profilePingStates[profile.id] = .timeout }
-                    continue
-                }
-
-                do {
-                    let latency = try await measuredLatency(for: node, profileID: profile.id)
-                    await MainActor.run {
-                        profilePingStates[profile.id] = latency > 850 ? .timeout : .latency(latency)
-                        sortProfilesByPing()
-                    }
-                } catch {
-                    await MainActor.run {
-                        profilePingStates[profile.id] = .timeout
-                        sortProfilesByPing()
-                    }
-                }
-            }
+            await pingProfilesInBatches(targets)
 
             await MainActor.run {
                 pingingAll = false
@@ -486,35 +470,52 @@ final class AppStore: ObservableObject {
     func pingSubscription(_ subscription: SubscriptionSummary) {
         guard !pingingSubscriptionIDs.contains(subscription.id) else { return }
         pingingSubscriptionIDs.insert(subscription.id)
-        statusLine = "Pinging \(subscription.title) one by one..."
+        statusLine = "Pinging \(subscription.title)..."
 
         let subscriptionProfiles = profiles.filter { subscription.profileIDs.contains($0.id) }
         subscriptionProfiles.forEach { profilePingStates[$0.id] = .pinging }
 
         Task {
-            for profile in subscriptionProfiles {
-                guard let node = profile.nodes.first else {
-                    await MainActor.run { profilePingStates[profile.id] = .timeout }
-                    continue
-                }
-                do {
-                    let latency = try await measuredLatency(for: node, profileID: profile.id)
-                    await MainActor.run {
-                        profilePingStates[profile.id] = latency > 850 ? .timeout : .latency(latency)
-                        sortProfilesByPing()
-                    }
-                } catch {
-                    await MainActor.run {
-                        profilePingStates[profile.id] = .timeout
-                        sortProfilesByPing()
-                    }
-                }
-            }
+            await pingProfilesInBatches(subscriptionProfiles)
 
             await MainActor.run {
                 pingingSubscriptionIDs.remove(subscription.id)
                 statusLine = "Ping complete for \(subscription.title)"
                 persistState()
+            }
+        }
+    }
+
+    private func pingProfilesInBatches(_ targets: [ProfileSummary]) async {
+        for startIndex in stride(from: 0, to: targets.count, by: Self.pingBatchSize) {
+            let endIndex = min(startIndex + Self.pingBatchSize, targets.count)
+            let batch = Array(targets[startIndex..<endIndex])
+
+            await withTaskGroup(of: (String, Int?).self) { group in
+                for profile in batch {
+                    group.addTask {
+                        guard let node = profile.nodes.first else {
+                            return (profile.id, nil)
+                        }
+                        do {
+                            let latency = try await Self.measuredProbeLatency(for: node)
+                            return (profile.id, latency)
+                        } catch {
+                            return (profile.id, nil)
+                        }
+                    }
+                }
+
+                for await (profileID, latency) in group {
+                    await MainActor.run {
+                        if let latency, latency <= 850 {
+                            profilePingStates[profileID] = .latency(latency)
+                        } else {
+                            profilePingStates[profileID] = .timeout
+                        }
+                        sortProfilesByPing()
+                    }
+                }
             }
         }
     }
@@ -599,8 +600,17 @@ final class AppStore: ObservableObject {
             return result.latencyMs
         }
 
-        let result = try await ConnectivityTester.testProxyHTTPProbe(to: node, timeout: 1)
+        let result = try await Self.measuredProxyProbe(for: node)
         return result.latencyMs
+    }
+
+    private nonisolated static func measuredProbeLatency(for node: ProxyNode) async throws -> Int {
+        let result = try await measuredProxyProbe(for: node)
+        return result.latencyMs
+    }
+
+    private nonisolated static func measuredProxyProbe(for node: ProxyNode) async throws -> TunnelHTTPProbeResult {
+        try await ConnectivityTester.testProxyHTTPProbe(to: node, timeout: proxyPingTimeout)
     }
 
     private func refreshExitLocation(afterConnectingTo node: ProxyNode) async {
