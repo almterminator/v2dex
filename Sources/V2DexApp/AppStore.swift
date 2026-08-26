@@ -45,6 +45,11 @@ final class AppStore: ObservableObject {
         return activeProfile.nodes.first { $0.id == tunnel.selectedNodeID } ?? activeProfile.nodes.first
     }
 
+    var standaloneProfiles: [ProfileSummary] {
+        let subscribedProfileIDs = Set(subscriptions.flatMap(\.profileIDs))
+        return profiles.filter { !subscribedProfileIDs.contains($0.id) }
+    }
+
     init() {
         loadPersistedState()
         tunnel.selectedProfileID = tunnel.selectedProfileID ?? profiles.first?.id
@@ -439,12 +444,18 @@ final class AppStore: ObservableObject {
 
     func pingAllProfiles() {
         guard !pingingAll else { return }
+        let targets = standaloneProfiles
+        guard !targets.isEmpty else {
+            statusLine = "No saved standalone configs to ping."
+            return
+        }
+
         pingingAll = true
         statusLine = "Pinging all configs one by one..."
-        profiles.forEach { profilePingStates[$0.id] = .pinging }
+        targets.forEach { profilePingStates[$0.id] = .pinging }
 
         Task {
-            for profile in profiles {
+            for profile in targets {
                 guard let node = profile.nodes.first else {
                     await MainActor.run { profilePingStates[profile.id] = .timeout }
                     continue

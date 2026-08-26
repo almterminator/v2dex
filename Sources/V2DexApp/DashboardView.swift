@@ -78,14 +78,15 @@ struct DashboardView: View {
 
     private var profilesSection: some View {
         glassCard {
+            let savedProfiles = store.standaloneProfiles
             VStack(alignment: .leading, spacing: 16) {
-                sectionHeader(title: "Saved Configs", count: store.profiles.count, showsPingAll: true)
+                sectionHeader(title: "Saved Configs", count: savedProfiles.count, showsPingAll: true)
 
-                if store.profiles.isEmpty {
+                if savedProfiles.isEmpty {
                     emptyProfiles
                 } else {
                     VStack(spacing: 12) {
-                        ForEach(store.profiles) { profile in
+                        ForEach(savedProfiles) { profile in
                             profileRow(profile, allowsEditing: true)
                         }
                     }
