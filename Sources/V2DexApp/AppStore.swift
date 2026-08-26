@@ -24,8 +24,8 @@ final class AppStore: ObservableObject {
     private var routerSocksProxyActive = false
 
     nonisolated private static let routerSocksPort = 43_080
-    nonisolated private static let pingBatchSize = 5
-    nonisolated private static let proxyPingTimeout: TimeInterval = 1
+    nonisolated private static let pingBatchSize = 3
+    nonisolated private static let proxyPingTimeout: TimeInterval = 2.5
 
     private struct PersistedAppState: Codable {
         var profiles: [ProfileSummary]
@@ -592,10 +592,10 @@ final class AppStore: ObservableObject {
            profileID == nil || profileID == activeProfile?.id,
            let proxyPort = SingboxConfigBuilder.localProxyPort as Int? {
             let result = try await ConnectivityTester.testHTTPViaLocalProxy(
-                url: "https://www.youtube.com/generate_204",
+                url: "https://cp.cloudflare.com/generate_204",
                 proxyHost: SingboxConfigBuilder.loopbackProxyHost,
                 proxyPort: proxyPort,
-                timeout: 1
+                timeout: Self.proxyPingTimeout
             )
             return result.latencyMs
         }

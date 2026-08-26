@@ -37,11 +37,11 @@ public enum ConnectivityTester {
             try await waitForTCPPort(
                 host: SingboxConfigBuilder.loopbackProxyHost,
                 port: proxyPort,
-                timeout: min(max(timeout, 1.0), 1.4)
+                timeout: min(max(timeout, 2.0), 3.0)
             )
 
             var lastError: Error?
-            let urlsToTry = timeout <= 1.1 ? Array(probeURLs.prefix(1)) : probeURLs
+            let urlsToTry = timeout <= 2.5 ? Array(probeURLs.prefix(2)) : probeURLs
             for url in urlsToTry {
                 guard !Task.isCancelled else { throw TestError.cancelled }
                 do {
@@ -201,10 +201,10 @@ public enum ConnectivityTester {
     }
 
     private static let probeURLs = [
-        "https://www.youtube.com/generate_204",
-        "https://www.google.com/generate_204",
         "https://cp.cloudflare.com/generate_204",
-        "http://cp.cloudflare.com/generate_204"
+        "http://cp.cloudflare.com/generate_204",
+        "https://www.google.com/generate_204",
+        "https://www.youtube.com/generate_204"
     ]
 
     private static func randomLocalPort() -> Int {
