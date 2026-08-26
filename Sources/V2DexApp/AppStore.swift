@@ -27,6 +27,17 @@ final class AppStore: ObservableObject {
     nonisolated private static let routerSocksPort = 43_080
     nonisolated private static let pingBatchSize = 3
     nonisolated private static let proxyPingTimeout: TimeInterval = 2.5
+    nonisolated private static let connectedProbeURLs = [
+        "https://www.youtube.com/generate_204",
+        "https://www.gstatic.com/generate_204",
+        "https://cp.cloudflare.com/generate_204",
+        "http://cp.cloudflare.com/generate_204"
+    ]
+    nonisolated private static let exitLookupURLs = [
+        "https://ipapi.co/json/",
+        "https://ipinfo.io/json",
+        "https://ipwho.is/"
+    ]
 
     private struct PersistedAppState: Codable {
         var profiles: [ProfileSummary]
@@ -58,6 +69,7 @@ final class AppStore: ObservableObject {
         tunnel.selectedProfileID = tunnel.selectedProfileID ?? profiles.first?.id
         tunnel.selectedNodeID = tunnel.selectedNodeID ?? profiles.first?.nodes.first?.id
         refreshConfigPreview()
+        cleanupStaleProxyOnLaunch()
     }
 
     func toggleConnection() {
@@ -114,6 +126,21 @@ final class AppStore: ObservableObject {
                     tunnel.connected = false
                     tunnel.lastError = error.localizedDescription
                     statusLine = "Connect failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func cleanupStaleProxyOnLaunch() {
+        Task {
+            let snapshot = SingboxRuntime.shared.statusSnapshot()
+            guard !snapshot.connected else { return }
+            do {
+                try SingboxRuntime.shared.stopIfNeeded()
+            } catch {
+                await MainActor.run {
+                    tunnel.lastError = error.localizedDescription
+                    statusLine = "Proxy cleanup warning: \(error.localizedDescription)"
                 }
             }
         }
@@ -593,16 +620,28 @@ final class AppStore: ObservableObject {
         if tunnel.connected,
            profileID == nil || profileID == activeProfile?.id,
            let proxyPort = SingboxConfigBuilder.localProxyPort as Int? {
-            let result = try await ConnectivityTester.testHTTPViaLocalProxy(
-                url: "https://cp.cloudflare.com/generate_204",
-                proxyHost: SingboxConfigBuilder.loopbackProxyHost,
-                proxyPort: proxyPort,
-                timeout: Self.proxyPingTimeout
-            )
-            return result.latencyMs
+            return try await Self.measuredConnectedProxyLatency(proxyPort: proxyPort)
         }
 
         return try await Self.measuredProbeLatency(for: node)
+    }
+
+    private nonisolated static func measuredConnectedProxyLatency(proxyPort: Int) async throws -> Int {
+        var lastError: Error?
+        for url in connectedProbeURLs {
+            do {
+                let result = try await ConnectivityTester.testHTTPViaLocalProxy(
+                    url: url,
+                    proxyHost: SingboxConfigBuilder.loopbackProxyHost,
+                    proxyPort: proxyPort,
+                    timeout: proxyPingTimeout
+                )
+                return result.latencyMs
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? URLError(.timedOut)
     }
 
     private nonisolated static func measuredProbeLatency(for node: ProxyNode) async throws -> Int {
@@ -611,12 +650,7 @@ final class AppStore: ObservableObject {
 
     private func refreshExitLocation(afterConnectingTo node: ProxyNode) async {
         do {
-            let response = try await ConnectivityTester.fetchTextViaLocalProxy(
-                url: "https://ipwho.is/",
-                proxyHost: SingboxConfigBuilder.loopbackProxyHost,
-                proxyPort: SingboxConfigBuilder.localProxyPort,
-                timeout: 8
-            )
+            let response = try await Self.fetchExitLocationPayload()
             let location = parseLocationPayload(response)
             await MainActor.run {
                 tunnel.exitIP = location.ip
@@ -629,6 +663,23 @@ final class AppStore: ObservableObject {
                 statusLine = "Connected via \(node.name), but exit country lookup failed."
             }
         }
+    }
+
+    private nonisolated static func fetchExitLocationPayload() async throws -> String {
+        var lastError: Error?
+        for url in exitLookupURLs {
+            do {
+                return try await ConnectivityTester.fetchTextViaLocalProxy(
+                    url: url,
+                    proxyHost: SingboxConfigBuilder.loopbackProxyHost,
+                    proxyPort: SingboxConfigBuilder.localProxyPort,
+                    timeout: 4
+                )
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? URLError(.timedOut)
     }
 
     private func parseLocationPayload(_ response: String) -> (ip: String?, countryCode: String?, countryName: String?) {

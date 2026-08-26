@@ -242,10 +242,11 @@ public enum ConnectivityTester {
     }
 
     private static let probeURLs = [
+        "https://www.youtube.com/generate_204",
+        "https://www.gstatic.com/generate_204",
         "https://cp.cloudflare.com/generate_204",
         "http://cp.cloudflare.com/generate_204",
-        "https://www.google.com/generate_204",
-        "https://www.youtube.com/generate_204"
+        "https://www.google.com/generate_204"
     ]
 
     private static func randomLocalPort() -> Int {

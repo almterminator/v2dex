@@ -151,17 +151,6 @@ public enum SingboxConfigBuilder {
     private static func buildRouteRules(mode: TunnelMode, appRules: [AppRouteRule], useTun: Bool) -> [[String: Any]] {
         var routeRules: [[String: Any]] = [
             [
-                "inbound": "mixed-in",
-                "action": "resolve",
-                "server": "local",
-                "strategy": "prefer_ipv4"
-            ],
-            [
-                "inbound": "mixed-in",
-                "action": "sniff",
-                "timeout": "300ms"
-            ],
-            [
                 "ip_is_private": true,
                 "action": "route",
                 "outbound": "direct"
@@ -182,10 +171,7 @@ public enum SingboxConfigBuilder {
             guard rule.enabled else {
                 return false
             }
-            if mode == .perApp {
-                return true
-            }
-            return isTelegramBundle(rule.bundleId)
+            return mode == .perApp
         }
 
         for rule in selectedRules {
@@ -209,10 +195,6 @@ public enum SingboxConfigBuilder {
         }
 
         return routeRules
-    }
-
-    private static func isTelegramBundle(_ bundleId: String) -> Bool {
-        ["ru.keepcoder.Telegram", "com.tdesktop.Telegram"].contains(bundleId)
     }
 
     private static func expandProcessNames(for rule: AppRouteRule) -> [String] {
@@ -335,9 +317,7 @@ public enum SingboxConfigBuilder {
             "type": node.protocolType,
             "server": node.server,
             "server_port": node.port,
-            "domain_resolver": preferredDomainResolver(),
-            "tcp_fast_open": true,
-            "udp_fragment": true
+            "domain_resolver": preferredDomainResolver()
         ]
 
         if ["vless", "vmess", "tuic"].contains(node.protocolType), let uuid = node.uuid {
@@ -447,7 +427,8 @@ public enum SingboxConfigBuilder {
         maxEarlyData: Int?,
         earlyDataHeaderName: String?
     ) {
-        let normalizedPath = rawPath.isEmpty ? "/" : rawPath
+        let cleanedPath = rawPath.replacingOccurrences(of: #"\/"#, with: "/")
+        let normalizedPath = cleanedPath.isEmpty ? "/" : cleanedPath
         guard let questionIndex = normalizedPath.firstIndex(of: "?") else {
             return (normalizedPath, nil, nil)
         }

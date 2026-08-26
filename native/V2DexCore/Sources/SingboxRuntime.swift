@@ -143,11 +143,17 @@ public final class SingboxRuntime: @unchecked Sendable {
         stderr.fileHandleForReading.readabilityHandler = outputHandler
 
         process.terminationHandler = { [weak self] process in
-            self?.stateQueue.sync {
-                self?.process = nil
-                self?.connecting = false
+            guard let self else { return }
+            var cleanupErrors: [String] = []
+            cleanupManagedSystemProxySettings(errors: &cleanupErrors)
+            stateQueue.sync {
+                self.process = nil
+                self.connecting = false
                 if process.terminationStatus != 0 {
-                    self?.lastError = "sing-box exited with code \(process.terminationStatus)"
+                    let message = "sing-box exited with code \(process.terminationStatus)"
+                    self.lastError = ([message] + cleanupErrors).joined(separator: "\n")
+                } else if !cleanupErrors.isEmpty {
+                    self.lastError = cleanupErrors.joined(separator: "\n")
                 }
             }
         }
@@ -306,8 +312,10 @@ public final class SingboxRuntime: @unchecked Sendable {
 
     public func statusSnapshot() -> TunnelStatusSnapshot {
         stateQueue.sync {
-            TunnelStatusSnapshot(
-                connected: process?.isRunning == true || elevatedPID.map(isPIDRunning(_:)) == true,
+            let runtimeAlive = process?.isRunning == true || elevatedPID.map(isPIDRunning(_:)) == true
+            let proxyReachable = runtimeAlive && isLocalProxyReachable()
+            return TunnelStatusSnapshot(
+                connected: proxyReachable,
                 connecting: connecting,
                 mode: mode,
                 backend: backend,

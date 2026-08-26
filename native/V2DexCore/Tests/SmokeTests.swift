@@ -36,7 +36,7 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(processNames.contains("Google Chrome Helper"))
     }
 
-    func testSingboxConfigIncludesPerformanceDefaults() throws {
+    func testSingboxConfigUsesLeanSystemProxyRouting() throws {
         let node = ProxyNode(
             id: "1",
             name: "Node",
@@ -62,10 +62,10 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(log["level"] as? String, "warn")
         XCTAssertEqual(dns["strategy"] as? String, "prefer_ipv4")
         XCTAssertNotNil(route["default_domain_resolver"])
-        XCTAssertTrue(rules.contains { $0["action"] as? String == "resolve" })
-        XCTAssertTrue(rules.contains { $0["action"] as? String == "sniff" })
-        XCTAssertEqual(proxy["tcp_fast_open"] as? Bool, true)
-        XCTAssertEqual(proxy["udp_fragment"] as? Bool, true)
+        XCTAssertFalse(rules.contains { $0["action"] as? String == "resolve" })
+        XCTAssertFalse(rules.contains { $0["action"] as? String == "sniff" })
+        XCTAssertNil(proxy["tcp_fast_open"])
+        XCTAssertNil(proxy["udp_fragment"])
         XCTAssertNotNil(proxy["domain_resolver"])
     }
 
@@ -179,7 +179,7 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(route["final"] as? String, "proxy")
     }
 
-    func testFullModeWithTelegramDoesNotRequireTunOrAdminPrivileges() throws {
+    func testFullModeIgnoresPerAppRules() throws {
         let node = ProxyNode(
             id: "1",
             name: "Node",
@@ -208,17 +208,11 @@ final class SmokeTests: XCTestCase {
 
         XCTAssertFalse(inbounds.contains { ($0["type"] as? String) == "tun" })
         XCTAssertEqual(route["final"] as? String, "proxy")
-        XCTAssertTrue(rules.contains { rule in
-            guard let processNames = rule["process_name"] as? [String] else {
-                return false
-            }
-            return processNames.contains("Telegram") && (rule["outbound"] as? String) == "proxy"
-        })
         XCTAssertFalse(rules.contains { rule in
             guard let processNames = rule["process_name"] as? [String] else {
                 return false
             }
-            return processNames.contains("Google Chrome")
+            return processNames.contains("Telegram") || processNames.contains("Google Chrome")
         })
     }
 
