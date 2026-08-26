@@ -6,6 +6,7 @@ struct DashboardView: View {
     @State private var importText = ""
     @State private var showingImportPopup = false
     @State private var showingProxyPopup = false
+    @State private var savedConfigsCollapsed = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -80,14 +81,16 @@ struct DashboardView: View {
         glassCard {
             let savedProfiles = store.standaloneProfiles
             VStack(alignment: .leading, spacing: 16) {
-                sectionHeader(title: "Saved Configs", count: savedProfiles.count, showsPingAll: true)
+                savedConfigsHeader(count: savedProfiles.count)
 
-                if savedProfiles.isEmpty {
-                    emptyProfiles
-                } else {
-                    VStack(spacing: 12) {
-                        ForEach(savedProfiles) { profile in
-                            profileRow(profile, allowsEditing: true)
+                if !savedConfigsCollapsed {
+                    if savedProfiles.isEmpty {
+                        emptyProfiles
+                    } else {
+                        VStack(spacing: 12) {
+                            ForEach(savedProfiles) { profile in
+                                profileRow(profile, allowsEditing: true)
+                            }
                         }
                     }
                 }
@@ -257,6 +260,55 @@ struct DashboardView: View {
         }
         .buttonStyle(IconButtonStyle(accent: Theme.currentAccent(store), compact: true))
         .help(help)
+    }
+
+    private func savedConfigsHeader(count: Int) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+                    savedConfigsCollapsed.toggle()
+                }
+            } label: {
+                Image(systemName: savedConfigsCollapsed ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(.plain)
+            .help(savedConfigsCollapsed ? "Expand saved configs" : "Collapse saved configs")
+
+            Text("Saved Configs")
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+
+            Text("\(count)")
+                .font(.system(size: 13, weight: .black))
+                .foregroundStyle(.white.opacity(0.70))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.08))
+                .clipShape(Capsule())
+
+            Spacer()
+
+            Button {
+                store.pingAllProfiles()
+            } label: {
+                ZStack {
+                    if store.pingingAll {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "speedometer")
+                            .font(.system(size: 16, weight: .black))
+                    }
+                }
+                .frame(width: 40, height: 40)
+            }
+            .buttonStyle(IconButtonStyle(accent: Theme.currentAccent(store), compact: true))
+            .help("Ping all saved configs")
+        }
+        .contentShape(Rectangle())
     }
 
     private func sectionHeader(title: String, count: Int? = nil, showsPingAll: Bool = false) -> some View {
