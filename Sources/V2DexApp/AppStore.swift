@@ -602,17 +602,11 @@ final class AppStore: ObservableObject {
             return result.latencyMs
         }
 
-        let result = try await Self.measuredProxyProbe(for: node)
-        return result.latencyMs
+        return try await Self.measuredProbeLatency(for: node)
     }
 
     private nonisolated static func measuredProbeLatency(for node: ProxyNode) async throws -> Int {
-        let result = try await measuredProxyProbe(for: node)
-        return result.latencyMs
-    }
-
-    private nonisolated static func measuredProxyProbe(for node: ProxyNode) async throws -> TunnelHTTPProbeResult {
-        try await ConnectivityTester.testProxyHTTPProbe(to: node, timeout: proxyPingTimeout)
+        try await ConnectivityTester.testEndpointPing(to: node, timeout: proxyPingTimeout)
     }
 
     private func refreshExitLocation(afterConnectingTo node: ProxyNode) async {

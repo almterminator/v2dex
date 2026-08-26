@@ -2,6 +2,14 @@ import Foundation
 import Network
 
 public enum ConnectivityTester {
+    public static func testEndpointPing(to node: ProxyNode, timeout: TimeInterval = 1.5) async throws -> Int {
+        do {
+            return try await testICMPPing(host: node.server, timeout: timeout)
+        } catch {
+            return max(try await testTCPConnection(to: node, timeout: min(timeout, 1.5)), 12)
+        }
+    }
+
     public static func testProxyHTTPProbe(
         to node: ProxyNode,
         binaryPath explicitBinaryPath: String? = nil,
@@ -106,6 +114,34 @@ public enum ConnectivityTester {
         }
     }
 
+    private static func testICMPPing(host: String, timeout: TimeInterval) async throws -> Int {
+        let output = try await runCommand(
+            path: "/sbin/ping",
+            arguments: [
+                "-c",
+                "1",
+                "-W",
+                String(Int((timeout * 1000).rounded())),
+                host
+            ],
+            timeout: timeout + 0.5
+        )
+        guard let latency = parsePingLatency(output) else {
+            throw TestError.commandFailed("Could not parse ping latency.")
+        }
+        return latency
+    }
+
+    private static func parsePingLatency(_ output: String) -> Int? {
+        guard let range = output.range(of: "time=") else { return nil }
+        let suffix = output[range.upperBound...]
+        let value = suffix.prefix { character in
+            character.isNumber || character == "."
+        }
+        guard let latency = Double(value) else { return nil }
+        return max(Int(latency.rounded()), 1)
+    }
+
     public static func testHTTPViaLocalProxy(
         url: String,
         proxyHost: String,
@@ -162,13 +198,17 @@ public enum ConnectivityTester {
     }
 
     private static func runCurl(arguments: [String], timeout: TimeInterval) async throws -> String {
+        try await runCommand(path: "/usr/bin/curl", arguments: arguments, timeout: timeout)
+    }
+
+    private static func runCommand(path: String, arguments: [String], timeout: TimeInterval) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             let output = Pipe()
             let errorOutput = Pipe()
             let state = FinishState()
 
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+            process.executableURL = URL(fileURLWithPath: path)
             process.arguments = arguments
             process.standardOutput = output
             process.standardError = errorOutput
@@ -181,7 +221,8 @@ public enum ConnectivityTester {
                 } else {
                     let message = String(decoding: errorData, as: UTF8.self)
                         .trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.resume(throwing: TestError.commandFailed(message.isEmpty ? "curl exited with code \(process.terminationStatus)." : message))
+                    let commandName = URL(fileURLWithPath: path).lastPathComponent
+                    continuation.resume(throwing: TestError.commandFailed(message.isEmpty ? "\(commandName) exited with code \(process.terminationStatus)." : message))
                 }
             }
 
