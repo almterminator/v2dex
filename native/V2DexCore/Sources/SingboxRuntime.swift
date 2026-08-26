@@ -35,10 +35,15 @@ public final class SingboxRuntime: @unchecked Sendable {
 
     public func resolveBinaryPath(explicitPath: String? = nil) -> String? {
         let resourcePath = Bundle.main.resourcePath.map { "\($0)/sing-box" }
+        let executableSiblingPath = Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .appendingPathComponent("sing-box")
+            .path
         let localRepoBinary = fileManager.currentDirectoryPath + "/.local/bin/sing-box"
         let candidates = [
             explicitPath,
             ProcessInfo.processInfo.environment[Self.environmentBinaryKey],
+            executableSiblingPath,
             Bundle.main.path(forResource: "sing-box", ofType: nil),
             resourcePath,
             Self.sourceRepoBinaryPath,
@@ -94,6 +99,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                     self.elevatedPID = pid
                 }
                 try waitForProxyReady(elevatedPID: pid, logPath: elevatedLogPath)
+                try enableManagedSystemProxyIfNeeded(mode: mode)
                 stateQueue.sync {
                     self.process = nil
                     self.elevatedPID = pid
@@ -104,11 +110,13 @@ public final class SingboxRuntime: @unchecked Sendable {
                 return statusSnapshot()
             } catch {
                 try? killElevatedSingbox()
+                var cleanupErrors: [String] = []
+                cleanupManagedSystemProxySettings(errors: &cleanupErrors)
                 stateQueue.sync {
                     self.connecting = false
                     self.elevatedPID = nil
                     self.elevatedLogPath = nil
-                    self.lastError = error.localizedDescription
+                    self.lastError = ([error.localizedDescription] + cleanupErrors).joined(separator: "\n")
                 }
                 throw error
             }
@@ -147,6 +155,7 @@ public final class SingboxRuntime: @unchecked Sendable {
         do {
             try process.run()
             try waitForProxyReady(process: process)
+            try enableManagedSystemProxyIfNeeded(mode: mode)
             stateQueue.sync {
                 self.proxiedAppBundleIDs = []
                 self.unsupportedPerAppBundleIDs = []
@@ -160,10 +169,12 @@ public final class SingboxRuntime: @unchecked Sendable {
             return statusSnapshot()
         } catch {
             process.terminate()
+            var cleanupErrors: [String] = []
+            cleanupManagedSystemProxySettings(errors: &cleanupErrors)
             stateQueue.sync {
                 self.connecting = false
                 self.proxiedAppBundleIDs = []
-                self.lastError = error.localizedDescription
+                self.lastError = ([error.localizedDescription] + cleanupErrors).joined(separator: "\n")
             }
             throw error
         }
@@ -171,6 +182,46 @@ public final class SingboxRuntime: @unchecked Sendable {
 
     public func stopIfNeeded() throws {
         try stopIfNeeded(cleanupStaleProcesses: false)
+    }
+
+    @discardableResult
+    public func enableRouterSocksProxy(port: Int) throws -> String {
+        try stopIfNeeded(cleanupStaleProcesses: false)
+        let routerHost = try proxyController.enableRouterSocksProxySettings(port: port)
+        stateQueue.sync {
+            self.process = nil
+            self.elevatedPID = nil
+            self.elevatedLogPath = nil
+            self.connecting = false
+            self.mode = .full
+            self.backend = .systemProxy
+            self.lastError = nil
+            self.lastConnectedAt = Date()
+            self.proxiedAppBundleIDs = []
+            self.unsupportedPerAppBundleIDs = []
+        }
+        return routerHost
+    }
+
+    public func disableRouterSocksProxy() throws {
+        var cleanupErrors: [String] = []
+        cleanupManagedSystemProxySettings(errors: &cleanupErrors)
+        do {
+            try proxyController.disableRouterSocksProxySettings()
+        } catch {
+            cleanupErrors.append(error.localizedDescription)
+        }
+        stateQueue.sync {
+            self.process = nil
+            self.elevatedPID = nil
+            self.elevatedLogPath = nil
+            self.connecting = false
+            self.proxiedAppBundleIDs = []
+            self.unsupportedPerAppBundleIDs = []
+        }
+        if !cleanupErrors.isEmpty {
+            throw SingboxRuntimeError.cleanupFailed(reason: cleanupErrors.joined(separator: "\n"))
+        }
     }
 
     private func stopIfNeeded(cleanupStaleProcesses: Bool) throws {
@@ -191,6 +242,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             stateQueue.sync {
                 self.elevatedPID = nil
             }
+            cleanupManagedSystemProxySettings(errors: &cleanupErrors)
             if cleanupStaleProcesses, let resolvedBinaryPath {
                 do {
                     try cleanupStaleSingboxProcesses(binaryPath: resolvedBinaryPath)
@@ -210,6 +262,7 @@ public final class SingboxRuntime: @unchecked Sendable {
         }
 
         process.terminate()
+        cleanupManagedSystemProxySettings(errors: &cleanupErrors)
         if cleanupStaleProcesses, let resolvedBinaryPath {
             do {
                 try cleanupStaleSingboxProcesses(binaryPath: resolvedBinaryPath)
@@ -228,6 +281,27 @@ public final class SingboxRuntime: @unchecked Sendable {
         if !cleanupErrors.isEmpty {
             throw SingboxRuntimeError.cleanupFailed(reason: cleanupErrors.joined(separator: "\n"))
         }
+    }
+
+    private func cleanupManagedSystemProxySettings(errors cleanupErrors: inout [String]) {
+        do {
+            try proxyController.disableV2DexProxySettings()
+        } catch {
+            cleanupErrors.append(error.localizedDescription)
+            do {
+                try proxyController.forceDisableAllProxies()
+            } catch {
+                cleanupErrors.append(error.localizedDescription)
+            }
+        }
+    }
+
+    private func enableManagedSystemProxyIfNeeded(mode: TunnelMode) throws {
+        guard mode == .full else { return }
+        try proxyController.enableV2DexProxySettings(
+            host: SingboxConfigBuilder.loopbackProxyHost,
+            port: SingboxConfigBuilder.localProxyPort
+        )
     }
 
     public func statusSnapshot() -> TunnelStatusSnapshot {

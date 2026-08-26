@@ -320,50 +320,140 @@ struct DashboardView: View {
     }
 
     private var controlDock: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             dockTray
-            HStack {
+            HStack(alignment: .center) {
                 flagControl
                 Spacer()
                 pingControl
             }
-            .padding(.horizontal, 42)
+            .frame(height: 94, alignment: .center)
+            .padding(.top, 42)
+            .padding(.horizontal, 34)
             powerControl
+                .padding(.top, 14)
+                .offset(y: -18)
         }
-        .frame(height: 150)
-        .padding(.horizontal, 0)
-        .padding(.bottom, 0)
+        .frame(height: 146)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     private var dockTray: some View {
         RoundedRectangle(cornerRadius: 52, style: .continuous)
-            .fill(Theme.panel.opacity(0.96))
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Theme.panel.opacity(0.98),
+                        Theme.panel.opacity(0.86)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 52, style: .continuous)
-                    .stroke(Theme.currentAccent(store).opacity(0.86), lineWidth: 5)
+                    .stroke(Theme.accentGradient(store), lineWidth: 4)
             )
-            .shadow(color: Theme.currentAccent(store).opacity(0.28), radius: 22, x: 0, y: 0)
+            .shadow(color: Theme.currentAccent(store).opacity(0.30), radius: 24, x: 0, y: 0)
+            .shadow(color: .black.opacity(0.40), radius: 20, x: 0, y: 14)
             .frame(height: 94)
             .padding(.top, 42)
     }
 
     private var flagControl: some View {
-        HStack(spacing: 14) {
-            Text(store.tunnel.connected ? flagEmoji(store.tunnel.countryCode) : "◎")
-                .font(.system(size: 42, weight: .black))
-                .frame(width: 58, height: 58)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(store.tunnel.connected ? (store.tunnel.countryName ?? store.tunnel.countryCode ?? "Connected") : "Ready")
-                    .font(.system(size: 18, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(store.tunnel.exitIP ?? "Location pending")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.48))
-                    .lineLimit(1)
+        Group {
+            if let exitLabel = dockExitLabel {
+                HStack(spacing: 12) {
+                    Text(flagEmoji(store.tunnel.countryCode))
+                        .font(.system(size: 38, weight: .black))
+                        .frame(width: 52, height: 58)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(exitLabel)
+                            .font(.system(size: 17, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        if let exitIP = store.tunnel.exitIP {
+                            Text(exitIP)
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.50))
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            } else {
+                routerSocksDockControl
             }
         }
-        .frame(maxWidth: 230, alignment: .leading)
+        .frame(width: 190, height: 94, alignment: .leading)
+    }
+
+    private var dockExitLabel: String? {
+        guard store.tunnel.connected else { return nil }
+        if let countryName = store.tunnel.countryName, !countryName.isEmpty {
+            return countryName
+        }
+        if let countryCode = store.tunnel.countryCode, !countryCode.isEmpty {
+            return countryCode
+        }
+        return nil
+    }
+
+    private var routerSocksDockControl: some View {
+        Button {
+            store.setRouterSocksModeEnabled(!store.routerSocksModeEnabled)
+        } label: {
+            ZStack(alignment: store.routerSocksModeEnabled ? .trailing : .leading) {
+                Capsule()
+                    .fill(
+                        store.routerSocksModeEnabled
+                            ? AnyShapeStyle(Theme.accentGradient(store))
+                            : AnyShapeStyle(Color.white.opacity(0.075))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(
+                                store.routerSocksModeEnabled
+                                    ? Color.white.opacity(0.22)
+                                    : Color.white.opacity(0.14),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(
+                        color: store.routerSocksModeEnabled ? Theme.currentAccent(store).opacity(0.45) : .clear,
+                        radius: 14,
+                        x: 0,
+                        y: 0
+                    )
+
+                HStack(spacing: 0) {
+                    if store.routerSocksModeEnabled {
+                        Image(systemName: "network")
+                            .font(.system(size: 18, weight: .black))
+                            .foregroundStyle(.black.opacity(0.78))
+                            .frame(width: 42, height: 42)
+                    }
+                    Spacer(minLength: 0)
+                    Circle()
+                        .fill(Color.white.opacity(0.95))
+                        .frame(width: 38, height: 38)
+                        .overlay(
+                            Image(systemName: store.routerSocksModeEnabled ? "checkmark" : "network")
+                                .font(.system(size: 14, weight: .black))
+                                .foregroundStyle(store.routerSocksModeEnabled ? Theme.green : .white.opacity(0.68))
+                        )
+                        .shadow(color: .black.opacity(0.34), radius: 8, x: 0, y: 4)
+                    if !store.routerSocksModeEnabled {
+                        Spacer(minLength: 0)
+                    }
+                }
+                .padding(5)
+            }
+            .frame(width: 96, height: 52)
+        }
+        .buttonStyle(.plain)
+        .help("Router SOCKS")
     }
 
     private var powerControl: some View {
@@ -387,14 +477,14 @@ struct DashboardView: View {
                 if store.tunnel.connecting {
                     ProgressView()
                         .controlSize(.large)
-                        .tint(.black.opacity(0.78))
+                        .tint(.white.opacity(0.96))
                 } else {
                     Image(systemName: "power")
                         .font(.system(size: 52, weight: .black))
-                        .foregroundStyle(.black.opacity(0.82))
+                        .foregroundStyle(.white.opacity(0.96))
                 }
             }
-            .frame(width: 126, height: 126)
+            .frame(width: 118, height: 118)
         }
         .buttonStyle(.plain)
         .help(store.tunnel.connected ? "Disconnect" : "Connect")
@@ -406,11 +496,13 @@ struct DashboardView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 35, weight: .black))
+                    .font(.system(size: 32, weight: .black))
                     .foregroundStyle(Theme.currentAccent(store))
                 Text(store.lastPingMs.map { "\($0)" } ?? "--")
-                    .font(.system(size: 38, weight: .black, design: .rounded))
+                    .font(.system(size: 34, weight: .black, design: .rounded))
                     .foregroundStyle(store.lastPingMs.map(pingColor) ?? Theme.currentAccent(store))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
                 Text("ms")
                     .font(.system(size: 15, weight: .black, design: .rounded))
                     .foregroundStyle(.white.opacity(0.78))
@@ -418,7 +510,7 @@ struct DashboardView: View {
             }
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: 210, alignment: .trailing)
+        .frame(width: 190, alignment: .trailing)
         .help("Ping")
     }
 
@@ -484,7 +576,7 @@ struct DashboardView: View {
     private var proxyPopover: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Local Proxy")
+                Text("Connection")
                     .font(.system(size: 18, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                 Spacer()
@@ -497,10 +589,33 @@ struct DashboardView: View {
             }
             proxyChip(icon: "globe", text: "HTTP 127.0.0.1:2081")
             proxyChip(icon: "point.3.connected.trianglepath.dotted", text: "SOCKS 2082")
+
+            Divider()
+                .overlay(Color.white.opacity(0.14))
+
+            Toggle(isOn: routerSocksModeBinding) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Router SOCKS")
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("Auto gateway · SOCKS 43080")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(Theme.currentAccent(store))
         }
         .padding(18)
-        .frame(width: 280)
+        .frame(width: 300)
         .background(Theme.panel)
+    }
+
+    private var routerSocksModeBinding: Binding<Bool> {
+        Binding(
+            get: { store.routerSocksModeEnabled },
+            set: { store.setRouterSocksModeEnabled($0) }
+        )
     }
 
     private func proxyChip(icon: String, text: String) -> some View {
@@ -577,6 +692,19 @@ private enum Theme {
             return orange
         }
         return purple
+    }
+
+    @MainActor
+    static func accentGradient(_ store: AppStore) -> LinearGradient {
+        let colors: [Color]
+        if store.tunnel.connected {
+            colors = [cyan, green]
+        } else if store.tunnel.connecting {
+            colors = [orange, Color(red: 1.0, green: 0.34, blue: 0.16)]
+        } else {
+            colors = [navy, purple]
+        }
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 

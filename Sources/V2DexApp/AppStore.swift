@@ -20,6 +20,10 @@ final class AppStore: ObservableObject {
     @Published var pingingSubscriptionIDs: Set<String> = []
     @Published var collapsedSubscriptionIDs: Set<String> = []
     @Published var profilePingStates: [String: ProfilePingState] = [:]
+    @Published var routerSocksModeEnabled = false
+    private var routerSocksProxyActive = false
+
+    nonisolated private static let routerSocksPort = 43_080
 
     private struct PersistedAppState: Codable {
         var profiles: [ProfileSummary]
@@ -29,6 +33,7 @@ final class AppStore: ObservableObject {
         var activeNodeId: String?
         var mode: TunnelMode?
         var collapsedSubscriptionIDs: [String]?
+        var routerSocksModeEnabled: Bool?
     }
 
     var activeProfile: ProfileSummary? {
@@ -56,6 +61,11 @@ final class AppStore: ObservableObject {
     }
 
     func connect() {
+        if routerSocksModeEnabled {
+            connectRouterSocksProxy()
+            return
+        }
+
         guard let node = activeNode else {
             tunnel.lastError = "No config selected"
             statusLine = "No config selected"
@@ -64,6 +74,7 @@ final class AppStore: ObservableObject {
 
         tunnel.connecting = true
         tunnel.lastError = nil
+        routerSocksProxyActive = false
         statusLine = "Starting local proxy..."
 
         Task {
@@ -101,6 +112,11 @@ final class AppStore: ObservableObject {
     }
 
     func disconnect() {
+        if routerSocksProxyActive {
+            disconnectRouterSocksProxy()
+            return
+        }
+
         tunnel.connecting = true
         statusLine = "Disconnecting..."
 
@@ -114,6 +130,7 @@ final class AppStore: ObservableObject {
                     tunnel.exitIP = nil
                     tunnel.countryCode = nil
                     tunnel.countryName = nil
+                    routerSocksProxyActive = false
                     statusLine = "Disconnected. Wi-Fi proxies are off."
                 }
             } catch {
@@ -124,7 +141,77 @@ final class AppStore: ObservableObject {
                     tunnel.exitIP = nil
                     tunnel.countryCode = nil
                     tunnel.countryName = nil
+                    routerSocksProxyActive = false
                     statusLine = "Disconnected with cleanup warning: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func setRouterSocksModeEnabled(_ enabled: Bool) {
+        routerSocksModeEnabled = enabled
+        statusLine = enabled ? "Router SOCKS mode enabled" : "Router SOCKS mode disabled"
+        persistState()
+    }
+
+    private func connectRouterSocksProxy() {
+        tunnel.connecting = true
+        tunnel.lastError = nil
+        statusLine = "Detecting router gateway..."
+
+        Task {
+            do {
+                let routerHost = try SingboxRuntime.shared.enableRouterSocksProxy(port: Self.routerSocksPort)
+                await MainActor.run {
+                    tunnel.connected = true
+                    tunnel.connecting = false
+                    tunnel.lastConnectedAt = Date()
+                    tunnel.lastError = nil
+                    tunnel.exitIP = nil
+                    tunnel.countryCode = nil
+                    tunnel.countryName = nil
+                    routerSocksProxyActive = true
+                    statusLine = "Wi-Fi SOCKS proxy: \(routerHost):\(Self.routerSocksPort)"
+                }
+            } catch {
+                await MainActor.run {
+                    tunnel.connected = false
+                    tunnel.connecting = false
+                    tunnel.lastError = error.localizedDescription
+                    routerSocksProxyActive = false
+                    statusLine = "Router SOCKS failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func disconnectRouterSocksProxy() {
+        tunnel.connecting = true
+        statusLine = "Turning off router SOCKS..."
+
+        Task {
+            do {
+                try SingboxRuntime.shared.disableRouterSocksProxy()
+                await MainActor.run {
+                    tunnel.connected = false
+                    tunnel.connecting = false
+                    tunnel.lastError = nil
+                    tunnel.exitIP = nil
+                    tunnel.countryCode = nil
+                    tunnel.countryName = nil
+                    routerSocksProxyActive = false
+                    statusLine = "Router SOCKS proxy is off."
+                }
+            } catch {
+                await MainActor.run {
+                    tunnel.connected = false
+                    tunnel.connecting = false
+                    tunnel.lastError = error.localizedDescription
+                    tunnel.exitIP = nil
+                    tunnel.countryCode = nil
+                    tunnel.countryName = nil
+                    routerSocksProxyActive = false
+                    statusLine = "Router SOCKS cleanup warning: \(error.localizedDescription)"
                 }
             }
         }
@@ -575,7 +662,8 @@ final class AppStore: ObservableObject {
             activeProfileId: tunnel.selectedProfileID,
             activeNodeId: tunnel.selectedNodeID,
             mode: tunnel.mode,
-            collapsedSubscriptionIDs: Array(collapsedSubscriptionIDs)
+            collapsedSubscriptionIDs: Array(collapsedSubscriptionIDs),
+            routerSocksModeEnabled: routerSocksModeEnabled
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -632,6 +720,7 @@ final class AppStore: ObservableObject {
         tunnel.selectedNodeID = state.activeNodeId
         tunnel.mode = state.mode ?? .full
         collapsedSubscriptionIDs = Set(state.collapsedSubscriptionIDs ?? [])
+        routerSocksModeEnabled = state.routerSocksModeEnabled ?? false
         statusLine = "Loaded saved config"
     }
 

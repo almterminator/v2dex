@@ -56,12 +56,120 @@ final class MacSystemProxyController {
         }
     }
 
+    func disableV2DexProxySettings() throws {
+        let services = try primaryProxyCleanupServices()
+        try runProxyCommands(services.flatMap { service in
+            [
+                ["-setwebproxystate", service, "off"],
+                ["-setsecurewebproxystate", service, "off"],
+                ["-setsocksfirewallproxystate", service, "off"]
+            ]
+        })
+    }
+
+    func enableV2DexProxySettings(host: String, port: Int) throws {
+        let services = try primaryProxyCleanupServices()
+        let portValue = String(port)
+        try runProxyCommands(services.flatMap { service in
+            [
+                ["-setwebproxy", service, host, portValue],
+                ["-setsecurewebproxy", service, host, portValue],
+                ["-setsocksfirewallproxy", service, host, portValue],
+                ["-setwebproxystate", service, "on"],
+                ["-setsecurewebproxystate", service, "on"],
+                ["-setsocksfirewallproxystate", service, "on"]
+            ]
+        })
+    }
+
+    @discardableResult
+    func enableRouterSocksProxySettings(port: Int) throws -> String {
+        let routerHost = try defaultRouterIPAddress()
+        let services = try primaryProxyCleanupServices()
+        try runProxyCommands(services.flatMap { service in
+            [
+                ["-setsocksfirewallproxy", service, routerHost, String(port)],
+                ["-setwebproxystate", service, "off"],
+                ["-setsecurewebproxystate", service, "off"],
+                ["-setsocksfirewallproxystate", service, "on"]
+            ]
+        })
+        return routerHost
+    }
+
+    func disableRouterSocksProxySettings() throws {
+        let services = try primaryProxyCleanupServices()
+        try runProxyCommands(services.flatMap { service in
+            [
+                ["-setsocksfirewallproxystate", service, "off"],
+                ["-setwebproxystate", service, "off"],
+                ["-setsecurewebproxystate", service, "off"]
+            ]
+        })
+    }
+
     private func activeNetworkServices() throws -> [String] {
         let output = try runNetworksetup(["-listallnetworkservices"])
         return output
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && !$0.hasPrefix("An asterisk") && !$0.hasPrefix("*") }
+    }
+
+    private func primaryProxyCleanupServices() throws -> [String] {
+        let services = try activeNetworkServices()
+        let wifiServices = services.filter { service in
+            let name = service.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return name == "wi-fi" || name.hasPrefix("wi-fi ")
+        }
+        return wifiServices.isEmpty ? services : wifiServices
+    }
+
+    private func defaultRouterIPAddress() throws -> String {
+        if let gateway = try parseRouteGateway() {
+            return gateway
+        }
+        if let gateway = try parseNetstatGateway() {
+            return gateway
+        }
+        throw MacSystemProxyControllerError.routerGatewayNotFound
+    }
+
+    private func parseRouteGateway() throws -> String? {
+        let output = try runCommand(path: "/sbin/route", arguments: ["-n", "get", "default"])
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            if key == "gateway", isIPv4Address(value) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func parseNetstatGateway() throws -> String? {
+        let output = try runCommand(path: "/usr/sbin/netstat", arguments: ["-rn", "-f", "inet"])
+        for line in output.split(separator: "\n") {
+            let columns = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            guard columns.count >= 2,
+                  columns[0] == "default",
+                  isIPv4Address(columns[1]) else {
+                continue
+            }
+            return columns[1]
+        }
+        return nil
+    }
+
+    private func isIPv4Address(_ value: String) -> Bool {
+        let octets = value.split(separator: ".")
+        guard octets.count == 4 else { return false }
+        return octets.allSatisfy { octet in
+            guard let number = Int(octet), number >= 0, number <= 255 else { return false }
+            return String(number) == String(octet) || octet == "0"
+        }
     }
 
     private func currentState(for service: String) throws -> ProxyState {
@@ -134,8 +242,13 @@ final class MacSystemProxyController {
 
     @discardableResult
     private func runNetworksetup(_ arguments: [String]) throws -> String {
+        try runCommand(path: networksetupPath, arguments: arguments)
+    }
+
+    @discardableResult
+    private func runCommand(path: String, arguments: [String]) throws -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: networksetupPath)
+        process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
 
         let stdout = Pipe()
@@ -157,6 +270,20 @@ final class MacSystemProxyController {
         }
 
         return output
+    }
+
+    private func runProxyCommands(_ commands: [[String]]) throws {
+        var errors: [String] = []
+        for command in commands {
+            do {
+                try runNetworksetup(command)
+            } catch {
+                errors.append(error.localizedDescription)
+            }
+        }
+        if !errors.isEmpty {
+            throw MacSystemProxyControllerError.cleanupFailed(messages: errors)
+        }
     }
 }
 
@@ -192,12 +319,18 @@ private enum ProxyKind {
 
 enum MacSystemProxyControllerError: LocalizedError {
     case commandFailed(arguments: [String], message: String)
+    case cleanupFailed(messages: [String])
+    case routerGatewayNotFound
 
     var errorDescription: String? {
         switch self {
         case let .commandFailed(arguments, message):
             let detail = message.isEmpty ? "unknown error" : message
             return "macOS proxy update failed for \(arguments.joined(separator: " ")): \(detail)"
+        case let .cleanupFailed(messages):
+            return "macOS proxy cleanup failed: \(messages.joined(separator: "; "))"
+        case .routerGatewayNotFound:
+            return "Could not detect the current Wi-Fi router IP address."
         }
     }
 }
