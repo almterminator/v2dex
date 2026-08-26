@@ -14,12 +14,12 @@ struct DashboardView: View {
             backgroundGlow
 
             appShell
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 8)
 
             controlDock
-                .padding(.horizontal, 30)
-                .padding(.bottom, 32)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 20)
         }
         .sheet(isPresented: $showingImportPopup) {
             importSheet
@@ -49,26 +49,26 @@ struct DashboardView: View {
     }
 
     private var appShell: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 18) {
             trafficLights
-                .padding(.top, 30)
-                .padding(.leading, 38)
+                .padding(.top, 24)
+                .padding(.leading, 28)
 
             topBar
-                .padding(.horizontal, 44)
+                .padding(.horizontal, 28)
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 26) {
                     savedConfigsPanel
                     subscriptionsSection
                 }
-                .padding(.horizontal, 44)
-                .padding(.bottom, 212)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 158)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 36, style: .continuous)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -82,11 +82,11 @@ struct DashboardView: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 36, style: .continuous)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Theme.shellStroke, lineWidth: 2)
         )
         .overlay(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 36, style: .continuous)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(Theme.purple.opacity(0.55), lineWidth: 1)
                 .blur(radius: 3)
                 .offset(x: -2, y: 1)
@@ -97,37 +97,37 @@ struct DashboardView: View {
     }
 
     private var trafficLights: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 12) {
             Circle().fill(Color(red: 1.00, green: 0.34, blue: 0.30))
             Circle().fill(Color(red: 1.00, green: 0.72, blue: 0.25))
             Circle().fill(Color(red: 0.43, green: 0.82, blue: 0.34))
         }
-        .frame(width: 132, height: 22)
+        .frame(width: 94, height: 16)
     }
 
     private var topBar: some View {
-        HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 16) {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(store.activeProfile?.title ?? "No config selected")
-                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .font(.system(size: 32, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.48)
                     .shadow(color: .black.opacity(0.28), radius: 5, x: 0, y: 4)
 
                 Text(store.statusLine)
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .font(.system(size: 15, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white.opacity(0.58))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 22) {
-                orbButton(icon: "globe", size: 88, iconSize: 38, help: "Connection") {
+            HStack(spacing: 12) {
+                orbButton(icon: "globe", size: 58, iconSize: 25, help: "Connection") {
                     showingProxyPopup = true
                 }
-                orbButton(icon: "plus", size: 88, iconSize: 44, help: "Import config") {
+                orbButton(icon: "plus", size: 58, iconSize: 31, help: "Import config") {
                     showingImportPopup = true
                 }
             }
@@ -160,7 +160,7 @@ struct DashboardView: View {
                 if savedProfiles.isEmpty {
                     emptyProfiles
                 } else {
-                    VStack(spacing: 14) {
+                    VStack(spacing: 10) {
                         ForEach(savedProfiles) { profile in
                             profileRow(profile, allowsEditing: true)
                         }
@@ -172,7 +172,7 @@ struct DashboardView: View {
     }
 
     private var subscriptionsSection: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(store.subscriptions) { subscription in
                 subscriptionCard(subscription)
             }
@@ -180,7 +180,7 @@ struct DashboardView: View {
     }
 
     private var emptyProfiles: some View {
-        liquidCard(height: 118) {
+        liquidCard(height: 88) {
             VStack(spacing: 12) {
                 Image(systemName: "tray")
                     .font(.system(size: 34, weight: .black))
@@ -231,7 +231,7 @@ struct DashboardView: View {
 
             if !store.collapsedSubscriptionIDs.contains(subscription.id) {
                 let profiles = store.profiles.filter { subscription.profileIDs.contains($0.id) }
-                VStack(spacing: 14) {
+                VStack(spacing: 10) {
                     ForEach(profiles) { profile in
                         profileRow(profile, allowsEditing: true)
                     }
@@ -253,29 +253,29 @@ struct DashboardView: View {
         onPrimary: @escaping () -> Void,
         onSecondary: (() -> Void)?
     ) -> some View {
-        liquidCard(height: 126) {
-            HStack(spacing: 26) {
+        liquidCard(height: 88) {
+            HStack(spacing: 14) {
                 Button(action: onToggle) {
                     Image(systemName: collapsed ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 28, weight: .black))
+                        .font(.system(size: 20, weight: .black))
                         .foregroundStyle(.white)
-                        .frame(width: 48, height: 64)
+                        .frame(width: 32, height: 44)
                 }
                 .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 10) {
                         Text(title)
-                            .font(.system(size: subtitle == nil ? 34 : 32, weight: .black, design: .rounded))
+                            .font(.system(size: subtitle == nil ? 24 : 23, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.58)
 
                         if let count {
                             Text("\(count)")
-                                .font(.system(size: 22, weight: .black, design: .rounded))
+                                .font(.system(size: 16, weight: .black, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.90))
-                                .frame(minWidth: 50, minHeight: 50)
+                                .frame(minWidth: 34, minHeight: 34)
                                 .background(
                                     Circle()
                                         .fill(Theme.purple.opacity(0.34))
@@ -286,26 +286,26 @@ struct DashboardView: View {
 
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 20, weight: .heavy, design: .rounded))
+                            .font(.system(size: 14, weight: .heavy, design: .rounded))
                             .foregroundStyle(.white.opacity(0.58))
                             .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 18) {
-                    orbButton(icon: primaryIcon, size: 70, iconSize: 24, loading: primaryLoading, help: "Ping") {
+                HStack(spacing: 10) {
+                    orbButton(icon: primaryIcon, size: 48, iconSize: 18, loading: primaryLoading, help: "Ping") {
                         onPrimary()
                     }
 
                     if let secondaryIcon, let onSecondary {
-                        orbButton(icon: secondaryIcon, size: 70, iconSize: 28, help: "Update") {
+                        orbButton(icon: secondaryIcon, size: 48, iconSize: 20, help: "Update") {
                             onSecondary()
                         }
                     }
                 }
             }
-            .padding(.horizontal, 36)
+            .padding(.horizontal, 20)
         }
     }
 
@@ -313,21 +313,21 @@ struct DashboardView: View {
         Button {
             store.selectProfile(profile)
         } label: {
-            liquidCard(height: 100, selected: profile.id == store.activeProfile?.id) {
-                HStack(spacing: 18) {
+            liquidCard(height: 74, selected: profile.id == store.activeProfile?.id) {
+                HStack(spacing: 12) {
                     Image(systemName: profile.id == store.activeProfile?.id ? "checkmark" : "server.rack")
-                        .font(.system(size: 24, weight: .black))
+                        .font(.system(size: 20, weight: .black))
                         .foregroundStyle(profile.id == store.activeProfile?.id ? Theme.currentAccent(store) : .white.opacity(0.82))
-                        .frame(width: 44, height: 52)
+                        .frame(width: 34, height: 40)
 
-                    VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(profile.title)
-                            .font(.system(size: 23, weight: .black, design: .rounded))
+                            .font(.system(size: 17, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.62)
                         Text(profile.nodes.first.map { "\($0.server):\($0.port)" } ?? profile.source)
-                            .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.50))
                             .lineLimit(1)
                     }
@@ -336,7 +336,7 @@ struct DashboardView: View {
 
                     pingBadge(for: profile)
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, 18)
             }
         }
         .buttonStyle(.plain)
@@ -367,23 +367,23 @@ struct DashboardView: View {
                     .tint(Theme.currentAccent(store))
             case let .latency(ms):
                 Text("\(ms)")
-                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .font(.system(size: 17, weight: .black, design: .rounded))
                     .foregroundStyle(pingColor(ms))
                 Text("ms")
-                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .font(.system(size: 10, weight: .black, design: .rounded))
                     .foregroundStyle(.white.opacity(0.68))
                     .baselineOffset(-5)
             case .timeout:
                 Text("TIMEOUT")
-                    .font(.system(size: 14, weight: .black, design: .rounded))
+                    .font(.system(size: 11, weight: .black, design: .rounded))
                     .foregroundStyle(Theme.red)
             case .idle:
                 Text("--")
-                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .font(.system(size: 17, weight: .black, design: .rounded))
                     .foregroundStyle(.white.opacity(0.48))
             }
         }
-        .frame(width: 110, alignment: .trailing)
+        .frame(width: 78, alignment: .trailing)
     }
 
     private var controlDock: some View {
@@ -395,17 +395,17 @@ struct DashboardView: View {
                 Spacer()
                 pingControl
             }
-            .padding(.horizontal, 54)
-            .padding(.top, 34)
+            .padding(.horizontal, 30)
+            .padding(.top, 24)
 
             powerControl
-                .offset(y: -22)
+                .offset(y: -16)
         }
-        .frame(height: 186)
+        .frame(height: 132)
     }
 
     private var dockTray: some View {
-        RoundedRectangle(cornerRadius: 62, style: .continuous)
+        RoundedRectangle(cornerRadius: 44, style: .continuous)
             .fill(
                 LinearGradient(
                     colors: [
@@ -417,17 +417,17 @@ struct DashboardView: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .overlay(RoundedRectangle(cornerRadius: 62, style: .continuous).stroke(Theme.accentGradient(store), lineWidth: 4))
+            .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(Theme.accentGradient(store), lineWidth: 3))
             .overlay(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 62, style: .continuous)
+                RoundedRectangle(cornerRadius: 44, style: .continuous)
                     .stroke(Color.white.opacity(0.58), lineWidth: 1)
                     .blur(radius: 1.4)
                     .padding(3)
             }
             .shadow(color: Theme.currentAccent(store).opacity(0.46), radius: 26, x: 0, y: 0)
             .shadow(color: .black.opacity(0.55), radius: 26, x: 0, y: 18)
-            .frame(height: 126)
-            .padding(.top, 34)
+            .frame(height: 86)
+            .padding(.top, 24)
     }
 
     private var routerOrFlagDockControl: some View {
@@ -435,15 +435,15 @@ struct DashboardView: View {
             if let exitLabel = dockExitLabel {
                 HStack(spacing: 10) {
                     Text(flagEmoji(store.tunnel.countryCode))
-                        .font(.system(size: 36, weight: .black))
-                        .frame(width: 48, height: 58)
+                        .font(.system(size: 28, weight: .black))
+                        .frame(width: 38, height: 44)
                     Text(exitLabel)
-                        .font(.system(size: 16, weight: .black, design: .rounded))
+                        .font(.system(size: 13, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.62)
                 }
-                .frame(width: 190, alignment: .leading)
+                .frame(width: 132, alignment: .leading)
             } else {
                 routerSocksDockControl
             }
@@ -482,17 +482,17 @@ struct DashboardView: View {
 
                 Circle()
                     .fill(store.routerSocksModeEnabled ? AnyShapeStyle(Theme.accentGradient(store)) : AnyShapeStyle(LinearGradient(colors: [.white.opacity(0.92), Theme.panel.opacity(0.78)], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                    .frame(width: 56, height: 56)
+                    .frame(width: 42, height: 42)
                     .overlay(
                         Image(systemName: "globe")
-                            .font(.system(size: 24, weight: .black))
+                            .font(.system(size: 18, weight: .black))
                             .foregroundStyle(.white)
                     )
                     .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 2))
                     .shadow(color: Theme.purple.opacity(0.58), radius: 18, x: 0, y: 0)
-                    .padding(7)
+                    .padding(5)
             }
-            .frame(width: 148, height: 72)
+            .frame(width: 108, height: 54)
         }
         .buttonStyle(.plain)
         .help("Router SOCKS")
@@ -505,10 +505,10 @@ struct DashboardView: View {
             ZStack {
                 Circle()
                     .fill(Theme.powerGradient(store))
-                    .overlay(Circle().stroke(Color.white.opacity(0.66), lineWidth: 3))
-                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 5).blur(radius: 1.1))
-                    .shadow(color: Theme.currentAccent(store).opacity(0.74), radius: 30, x: 0, y: 0)
-                    .shadow(color: .black.opacity(0.46), radius: 20, x: 0, y: 12)
+                    .overlay(Circle().stroke(Color.white.opacity(0.66), lineWidth: 2))
+                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 4).blur(radius: 1.0))
+                    .shadow(color: Theme.currentAccent(store).opacity(0.74), radius: 22, x: 0, y: 0)
+                    .shadow(color: .black.opacity(0.46), radius: 16, x: 0, y: 10)
 
                 if store.tunnel.connecting {
                     ProgressView()
@@ -516,11 +516,11 @@ struct DashboardView: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "power")
-                        .font(.system(size: 62, weight: .black))
+                        .font(.system(size: 44, weight: .black))
                         .foregroundStyle(.white)
                 }
             }
-            .frame(width: 142, height: 142)
+            .frame(width: 98, height: 98)
         }
         .buttonStyle(.plain)
         .help(store.tunnel.connected ? "Disconnect" : "Connect")
@@ -530,29 +530,29 @@ struct DashboardView: View {
         Button {
             store.runLatencyTest()
         } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: 8) {
                 if store.pinging {
                     ProgressView()
                         .controlSize(.small)
                         .tint(Theme.currentAccent(store))
                 } else {
                     Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 40, weight: .black))
+                        .font(.system(size: 28, weight: .black))
                         .foregroundStyle(Theme.currentAccent(store))
                 }
                 Text(store.lastPingMs.map { "\($0)" } ?? "--")
-                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .font(.system(size: 24, weight: .black, design: .rounded))
                     .foregroundStyle(store.lastPingMs.map(pingColor) ?? Theme.currentAccent(store))
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
                 Text("ms")
-                    .font(.system(size: 19, weight: .black, design: .rounded))
+                    .font(.system(size: 13, weight: .black, design: .rounded))
                     .foregroundStyle(.white.opacity(0.70))
-                    .baselineOffset(-7)
+                    .baselineOffset(-5)
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 208, alignment: .trailing)
+        .frame(width: 132, alignment: .trailing)
         .help("Ping")
     }
 
@@ -709,7 +709,7 @@ struct DashboardView: View {
 
     private func liquidCard<Content: View>(height: CGFloat, selected: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -721,9 +721,9 @@ struct DashboardView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(selected ? Theme.accentGradient(store) : Theme.cardStroke, lineWidth: selected ? 3 : 2))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(selected ? Theme.accentGradient(store) : Theme.cardStroke, lineWidth: selected ? 2.5 : 1.6))
                 .overlay(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [Color.white.opacity(0.34), Color.white.opacity(0.08), .clear],
@@ -731,12 +731,12 @@ struct DashboardView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 150, height: height * 0.62)
+                        .frame(width: 104, height: height * 0.58)
                         .blur(radius: 1.2)
-                        .opacity(0.58)
+                        .opacity(0.48)
                 }
-                .shadow(color: Theme.purple.opacity(selected ? 0.50 : 0.30), radius: selected ? 22 : 14, x: 0, y: 0)
-                .shadow(color: .black.opacity(0.36), radius: 22, x: 0, y: 12)
+                .shadow(color: Theme.purple.opacity(selected ? 0.42 : 0.24), radius: selected ? 16 : 10, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.34), radius: 14, x: 0, y: 8)
 
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
