@@ -145,6 +145,7 @@ struct DashboardView: View {
                 primaryIcon: "speedometer",
                 secondaryIcon: nil,
                 primaryLoading: store.pingingAll,
+                secondaryLoading: false,
                 onToggle: {
                     withAnimation(.spring(response: 0.26, dampingFraction: 0.86)) {
                         savedConfigsCollapsed.toggle()
@@ -203,6 +204,7 @@ struct DashboardView: View {
                 primaryIcon: "speedometer",
                 secondaryIcon: "arrow.clockwise",
                 primaryLoading: store.pingingSubscriptionIDs.contains(subscription.id),
+                secondaryLoading: store.updatingSubscriptionIDs.contains(subscription.id),
                 onToggle: {
                     withAnimation(.spring(response: 0.26, dampingFraction: 0.86)) {
                         store.toggleSubscriptionCollapsed(subscription)
@@ -249,6 +251,7 @@ struct DashboardView: View {
         primaryIcon: String,
         secondaryIcon: String?,
         primaryLoading: Bool,
+        secondaryLoading: Bool,
         onToggle: @escaping () -> Void,
         onPrimary: @escaping () -> Void,
         onSecondary: (() -> Void)?
@@ -299,7 +302,7 @@ struct DashboardView: View {
                     }
 
                     if let secondaryIcon, let onSecondary {
-                        orbButton(icon: secondaryIcon, size: 48, iconSize: 20, help: "Update") {
+                        orbButton(icon: secondaryIcon, size: 48, iconSize: 20, loading: secondaryLoading, help: "Update") {
                             onSecondary()
                         }
                     }

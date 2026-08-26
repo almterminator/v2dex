@@ -18,6 +18,7 @@ final class AppStore: ObservableObject {
     @Published var pinging = false
     @Published var pingingAll = false
     @Published var pingingSubscriptionIDs: Set<String> = []
+    @Published var updatingSubscriptionIDs: Set<String> = []
     @Published var collapsedSubscriptionIDs: Set<String> = []
     @Published var profilePingStates: [String: ProfilePingState] = [:]
     @Published var routerSocksModeEnabled = false
@@ -320,8 +321,8 @@ final class AppStore: ObservableObject {
     }
 
     func updateSubscription(_ subscription: SubscriptionSummary) {
-        guard !pingingSubscriptionIDs.contains(subscription.id) else { return }
-        pingingSubscriptionIDs.insert(subscription.id)
+        guard !updatingSubscriptionIDs.contains(subscription.id) else { return }
+        updatingSubscriptionIDs.insert(subscription.id)
         statusLine = "Updating \(subscription.title)..."
 
         Task {
@@ -340,7 +341,8 @@ final class AppStore: ObservableObject {
                 }
 
                 await MainActor.run {
-                    let oldIDs = Set(subscription.profileIDs)
+                    let currentSubscription = subscriptions.first { $0.id == subscription.id } ?? subscription
+                    let oldIDs = Set(currentSubscription.profileIDs)
                     profiles.removeAll { oldIDs.contains($0.id) }
                     profiles.insert(contentsOf: refreshedProfiles, at: 0)
                     if let index = subscriptions.firstIndex(where: { $0.id == subscription.id }) {
@@ -350,13 +352,13 @@ final class AppStore: ObservableObject {
                     if let first = refreshedProfiles.first {
                         selectProfile(first)
                     }
-                    pingingSubscriptionIDs.remove(subscription.id)
+                    updatingSubscriptionIDs.remove(subscription.id)
                     statusLine = "Updated \(refreshedProfiles.count) configs from \(subscription.title)"
                     persistState()
                 }
             } catch {
                 await MainActor.run {
-                    pingingSubscriptionIDs.remove(subscription.id)
+                    updatingSubscriptionIDs.remove(subscription.id)
                     statusLine = "Update failed for \(subscription.title): \(error.localizedDescription)"
                 }
             }
