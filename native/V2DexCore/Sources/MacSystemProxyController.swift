@@ -68,13 +68,18 @@ final class MacSystemProxyController {
     }
 
     func enableV2DexProxySettings(host: String, port: Int) throws {
+        try enableV2DexProxySettings(host: host, httpPort: port, socksPort: port)
+    }
+
+    func enableV2DexProxySettings(host: String, httpPort: Int, socksPort: Int) throws {
         let services = try primaryProxyCleanupServices()
-        let portValue = String(port)
+        let httpPortValue = String(httpPort)
+        let socksPortValue = String(socksPort)
         try runProxyCommands(services.flatMap { service in
             [
-                ["-setwebproxy", service, host, portValue],
-                ["-setsecurewebproxy", service, host, portValue],
-                ["-setsocksfirewallproxy", service, host, portValue],
+                ["-setwebproxy", service, host, httpPortValue],
+                ["-setsecurewebproxy", service, host, httpPortValue],
+                ["-setsocksfirewallproxy", service, host, socksPortValue],
                 ["-setwebproxystate", service, "on"],
                 ["-setsecurewebproxystate", service, "on"],
                 ["-setsocksfirewallproxystate", service, "on"]

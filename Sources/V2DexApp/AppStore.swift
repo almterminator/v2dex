@@ -99,15 +99,10 @@ final class AppStore: ObservableObject {
 
         Task {
             do {
-                let configData = try SingboxConfigBuilder.build(
-                    node: node,
-                    mode: .full,
-                    appRules: appRules.map(\.coreRule)
-                )
-                let snapshot = try SingboxRuntime.shared.start(
+                let configData = try XrayConfigBuilder.build(node: node)
+                let snapshot = try SingboxRuntime.shared.startXray(
                     configData: configData,
-                    mode: .full,
-                    appRules: appRules.map(\.coreRule)
+                    mode: .full
                 )
 
                 await MainActor.run {
@@ -564,11 +559,7 @@ final class AppStore: ObservableObject {
         }
 
         do {
-            let data = try SingboxConfigBuilder.build(
-                node: node,
-                mode: .full,
-                appRules: appRules.map(\.coreRule)
-            )
+            let data = try XrayConfigBuilder.build(node: node)
             configPreview = String(decoding: data, as: UTF8.self)
         } catch {
             configPreview = "{\n  \"error\": \"\(error.localizedDescription)\"\n}"
@@ -620,7 +611,8 @@ final class AppStore: ObservableObject {
         if tunnel.connected,
            profileID == nil || profileID == activeProfile?.id,
            let proxyPort = SingboxConfigBuilder.localProxyPort as Int? {
-            return try await Self.measuredConnectedProxyLatency(proxyPort: proxyPort)
+            _ = try await Self.measuredConnectedProxyLatency(proxyPort: proxyPort)
+            return try await Self.measuredEndpointLatency(for: node)
         }
 
         return try await Self.measuredProbeLatency(for: node)
@@ -645,6 +637,12 @@ final class AppStore: ObservableObject {
     }
 
     private nonisolated static func measuredProbeLatency(for node: ProxyNode) async throws -> Int {
+        async let endpointLatency = measuredEndpointLatency(for: node)
+        _ = try await ConnectivityTester.testXrayHTTPProbe(to: node, timeout: proxyPingTimeout)
+        return try await endpointLatency
+    }
+
+    private nonisolated static func measuredEndpointLatency(for node: ProxyNode) async throws -> Int {
         try await ConnectivityTester.testEndpointPing(to: node, timeout: proxyPingTimeout)
     }
 

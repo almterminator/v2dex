@@ -4,6 +4,7 @@ import Foundation
 public final class SingboxRuntime: @unchecked Sendable {
     public static let shared = SingboxRuntime()
     private static let environmentBinaryKey = "V2DEX_SINGBOX_PATH"
+    private static let xrayEnvironmentBinaryKey = "V2DEX_XRAY_PATH"
     private static let sourceRepoBinaryPath: String = {
         let sourceFileURL = URL(fileURLWithPath: #filePath)
         let repoRootURL = sourceFileURL
@@ -24,6 +25,7 @@ public final class SingboxRuntime: @unchecked Sendable {
     private var connecting = false
     private var mode: TunnelMode = .full
     private var backend: RuntimeBackend = .systemProxy
+    private var runtimeName = "sing-box"
     private var outputLog: [String] = []
     private var elevatedPID: Int32?
     private var elevatedLogPath: String?
@@ -59,6 +61,31 @@ public final class SingboxRuntime: @unchecked Sendable {
         return nil
     }
 
+    public func resolveXrayBinaryPath(explicitPath: String? = nil) -> String? {
+        let resourcePath = Bundle.main.resourcePath.map { "\($0)/xray" }
+        let executableSiblingPath = Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .appendingPathComponent("xray")
+            .path
+        let localRepoBinary = fileManager.currentDirectoryPath + "/.local/bin/xray"
+        let candidates = [
+            explicitPath,
+            ProcessInfo.processInfo.environment[Self.xrayEnvironmentBinaryKey],
+            executableSiblingPath,
+            Bundle.main.path(forResource: "xray", ofType: nil),
+            resourcePath,
+            localRepoBinary,
+            "/opt/homebrew/bin/xray",
+            "/usr/local/bin/xray"
+        ].compactMap { $0 }
+
+        for path in candidates where fileManager.isExecutableFile(atPath: path) {
+            return path
+        }
+
+        return nil
+    }
+
     public func start(
         configData: Data,
         mode: TunnelMode,
@@ -80,6 +107,7 @@ public final class SingboxRuntime: @unchecked Sendable {
         stateQueue.sync {
             self.connecting = true
             self.mode = mode
+            self.runtimeName = "sing-box"
             self.lastError = nil
             self.binaryPath = resolvedBinaryPath
             self.activeConfigPath = configPath
@@ -150,7 +178,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.process = nil
                 self.connecting = false
                 if process.terminationStatus != 0 {
-                    let message = "sing-box exited with code \(process.terminationStatus)"
+                    let message = "\(self.runtimeName) exited with code \(process.terminationStatus)"
                     self.lastError = ([message] + cleanupErrors).joined(separator: "\n")
                 } else if !cleanupErrors.isEmpty {
                     self.lastError = cleanupErrors.joined(separator: "\n")
@@ -171,6 +199,93 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.connecting = false
                 self.lastConnectedAt = Date()
                 self.backend = mode == .full ? .systemProxy : .appProxy
+            }
+            return statusSnapshot()
+        } catch {
+            process.terminate()
+            var cleanupErrors: [String] = []
+            cleanupManagedSystemProxySettings(errors: &cleanupErrors)
+            stateQueue.sync {
+                self.connecting = false
+                self.proxiedAppBundleIDs = []
+                self.lastError = ([error.localizedDescription] + cleanupErrors).joined(separator: "\n")
+            }
+            throw error
+        }
+    }
+
+    public func startXray(
+        configData: Data,
+        mode: TunnelMode,
+        binaryPath explicitBinaryPath: String? = nil
+    ) throws -> TunnelStatusSnapshot {
+        guard let resolvedBinaryPath = resolveXrayBinaryPath(explicitPath: explicitBinaryPath) else {
+            throw SingboxRuntimeError.binaryNotFound(environmentKey: Self.xrayEnvironmentBinaryKey)
+        }
+
+        try stopIfNeeded(cleanupStaleProcesses: false)
+
+        let configPath = try writeConfig(configData, runtimeName: "xray")
+        stateQueue.sync {
+            self.connecting = true
+            self.mode = mode
+            self.runtimeName = "xray"
+            self.lastError = nil
+            self.binaryPath = resolvedBinaryPath
+            self.activeConfigPath = configPath
+            self.elevatedLogPath = nil
+            self.elevatedPID = nil
+            self.proxiedAppBundleIDs = []
+            self.unsupportedPerAppBundleIDs = []
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: resolvedBinaryPath)
+        process.arguments = ["run", "-config", configPath]
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        let outputHandler: (FileHandle) -> Void = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let line = String(data: data, encoding: .utf8) else {
+                return
+            }
+            self?.appendOutput(line)
+        }
+
+        stdout.fileHandleForReading.readabilityHandler = outputHandler
+        stderr.fileHandleForReading.readabilityHandler = outputHandler
+
+        process.terminationHandler = { [weak self] process in
+            guard let self else { return }
+            var cleanupErrors: [String] = []
+            cleanupManagedSystemProxySettings(errors: &cleanupErrors)
+            stateQueue.sync {
+                self.process = nil
+                self.connecting = false
+                if process.terminationStatus != 0 {
+                    let message = "xray exited with code \(process.terminationStatus)"
+                    self.lastError = ([message] + cleanupErrors).joined(separator: "\n")
+                } else if !cleanupErrors.isEmpty {
+                    self.lastError = cleanupErrors.joined(separator: "\n")
+                }
+            }
+        }
+
+        do {
+            try process.run()
+            try waitForProxyReady(process: process)
+            try enableManagedSystemProxyIfNeeded(mode: mode, splitPorts: true)
+            stateQueue.sync {
+                self.proxiedAppBundleIDs = []
+                self.unsupportedPerAppBundleIDs = []
+                self.process = process
+                self.connecting = false
+                self.lastConnectedAt = Date()
+                self.backend = .systemProxy
             }
             return statusSnapshot()
         } catch {
@@ -303,11 +418,23 @@ public final class SingboxRuntime: @unchecked Sendable {
     }
 
     private func enableManagedSystemProxyIfNeeded(mode: TunnelMode) throws {
+        try enableManagedSystemProxyIfNeeded(mode: mode, splitPorts: false)
+    }
+
+    private func enableManagedSystemProxyIfNeeded(mode: TunnelMode, splitPorts: Bool) throws {
         guard mode == .full else { return }
-        try proxyController.enableV2DexProxySettings(
-            host: SingboxConfigBuilder.loopbackProxyHost,
-            port: SingboxConfigBuilder.localProxyPort
-        )
+        if splitPorts {
+            try proxyController.enableV2DexProxySettings(
+                host: SingboxConfigBuilder.loopbackProxyHost,
+                httpPort: XrayConfigBuilder.localHTTPProxyPort,
+                socksPort: XrayConfigBuilder.localSocksProxyPort
+            )
+        } else {
+            try proxyController.enableV2DexProxySettings(
+                host: SingboxConfigBuilder.loopbackProxyHost,
+                port: SingboxConfigBuilder.localProxyPort
+            )
+        }
     }
 
     public func statusSnapshot() -> TunnelStatusSnapshot {
@@ -335,10 +462,10 @@ public final class SingboxRuntime: @unchecked Sendable {
         }
     }
 
-    private func writeConfig(_ data: Data) throws -> String {
+    private func writeConfig(_ data: Data, runtimeName: String = "sing-box") throws -> String {
         let directory = fileManager.temporaryDirectory.appendingPathComponent("v2dex-runtime", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("sing-box-\(UUID().uuidString).json")
+        let configURL = directory.appendingPathComponent("\(runtimeName)-\(UUID().uuidString).json")
         try data.write(to: configURL, options: .atomic)
         return configURL.path
     }

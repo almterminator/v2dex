@@ -77,6 +77,73 @@ public enum ConnectivityTester {
         }
     }
 
+    public static func testXrayHTTPProbe(
+        to node: ProxyNode,
+        binaryPath explicitBinaryPath: String? = nil,
+        timeout: TimeInterval = 2.5
+    ) async throws -> TunnelHTTPProbeResult {
+        guard let binaryPath = SingboxRuntime.shared.resolveXrayBinaryPath(explicitPath: explicitBinaryPath) else {
+            throw SingboxRuntimeError.binaryNotFound(environmentKey: "V2DEX_XRAY_PATH")
+        }
+
+        let httpPort = randomLocalPort()
+        let socksPort = randomLocalPort(excluding: httpPort)
+        let configData = try XrayConfigBuilder.build(node: node, httpPort: httpPort, socksPort: socksPort)
+        let configURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("v2dex-xray-probe-\(UUID().uuidString).json")
+        try configData.write(to: configURL, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let process = Process()
+        let output = Pipe()
+        let errorOutput = Pipe()
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = ["run", "-config", configURL.path]
+        process.standardOutput = output
+        process.standardError = errorOutput
+        defer {
+            if process.isRunning {
+                process.terminate()
+                process.waitUntilExit()
+            }
+        }
+
+        do {
+            try process.run()
+            try await waitForTCPPort(
+                host: SingboxConfigBuilder.loopbackProxyHost,
+                port: socksPort,
+                timeout: min(max(timeout, 1.0), 2.0)
+            )
+
+            var lastError: Error?
+            for url in Array(probeURLs.prefix(3)) {
+                guard !Task.isCancelled else { throw TestError.cancelled }
+                do {
+                    return try await testHTTPViaLocalProxy(
+                        url: url,
+                        proxyHost: SingboxConfigBuilder.loopbackProxyHost,
+                        proxyPort: socksPort,
+                        timeout: timeout
+                    )
+                } catch {
+                    lastError = error
+                }
+            }
+
+            throw lastError ?? TestError.timeout
+        } catch {
+            if !process.isRunning {
+                let stderr = String(decoding: errorOutput.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !stderr.isEmpty {
+                    throw TestError.commandFailed(stderr)
+                }
+            }
+            throw error
+        }
+    }
+
     public static func testTCPConnection(to node: ProxyNode, timeout: TimeInterval = 6) async throws -> Int {
         let startedAt = Date()
         let port = NWEndpoint.Port(integerLiteral: UInt16(node.port))
@@ -249,8 +316,12 @@ public enum ConnectivityTester {
         "https://www.google.com/generate_204"
     ]
 
-    private static func randomLocalPort() -> Int {
-        Int.random(in: 25000...45000)
+    private static func randomLocalPort(excluding excludedPort: Int? = nil) -> Int {
+        var port = Int.random(in: 25000...45000)
+        while port == excludedPort {
+            port = Int.random(in: 25000...45000)
+        }
+        return port
     }
 
     private static func buildProbeConfig(node: ProxyNode, proxyPort: Int) throws -> Data {

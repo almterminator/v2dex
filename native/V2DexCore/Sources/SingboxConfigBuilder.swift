@@ -7,7 +7,9 @@ public enum SingboxConfigBuilder {
     public static var localProxyHost: String {
         localNetworkProxyHost() ?? localProxyListenHost
     }
-    public static let localProxyPort = 2081
+    public static let localHTTPProxyPort = 2081
+    public static let localSocksProxyPort = 2082
+    public static let localProxyPort = localSocksProxyPort
     public static let tunAddress = "172.19.0.1/30"
 
     public static func build(node: ProxyNode, mode: TunnelMode, appRules: [AppRouteRule]) throws -> Data {
