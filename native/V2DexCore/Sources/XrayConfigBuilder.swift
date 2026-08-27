@@ -187,7 +187,10 @@ public enum XrayConfigBuilder {
 
         var stream: [String: Any] = [
             "network": network,
-            "security": node.security == "reality" ? "reality" : node.security == "tls" ? "tls" : "none"
+            "security": node.security == "reality" ? "reality" : node.security == "tls" ? "tls" : "none",
+            "sockopt": [
+                "tcpFastOpen": true
+            ]
         ]
 
         if node.security == "tls" {

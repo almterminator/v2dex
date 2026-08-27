@@ -637,9 +637,7 @@ final class AppStore: ObservableObject {
     }
 
     private nonisolated static func measuredProbeLatency(for node: ProxyNode) async throws -> Int {
-        async let endpointLatency = measuredEndpointLatency(for: node)
-        _ = try await ConnectivityTester.testXrayHTTPProbe(to: node, timeout: proxyPingTimeout)
-        return try await endpointLatency
+        try await measuredEndpointLatency(for: node)
     }
 
     private nonisolated static func measuredEndpointLatency(for node: ProxyNode) async throws -> Int {
