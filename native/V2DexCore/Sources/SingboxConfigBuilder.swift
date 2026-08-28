@@ -316,7 +316,7 @@ public enum SingboxConfigBuilder {
     private static func outboundDictionary(for node: ProxyNode) -> [String: Any] {
         var outbound: [String: Any] = [
             "tag": "proxy",
-            "type": node.protocolType,
+            "type": singboxOutboundType(for: node),
             "server": node.server,
             "server_port": node.port,
             "domain_resolver": preferredDomainResolver()
@@ -335,6 +335,19 @@ public enum SingboxConfigBuilder {
                 outbound["alter_id"] = alterId
             }
             outbound["security"] = node.vmessCipher ?? "auto"
+        }
+
+        if node.protocolType == "socks5" {
+            outbound["version"] = "5"
+        }
+
+        if ["socks5", "http", "https"].contains(node.protocolType) {
+            if let username = node.username, !username.isEmpty {
+                outbound["username"] = username
+            }
+            if let password = node.password, !password.isEmpty {
+                outbound["password"] = password
+            }
         }
 
         if let flow = node.flow, !flow.isEmpty {
@@ -400,6 +413,17 @@ public enum SingboxConfigBuilder {
         }
 
         return outbound
+    }
+
+    private static func singboxOutboundType(for node: ProxyNode) -> String {
+        switch node.protocolType {
+        case "socks5":
+            return "socks"
+        case "https":
+            return "http"
+        default:
+            return node.protocolType
+        }
     }
 
     private static func preferredDomainResolver() -> [String: Any] {

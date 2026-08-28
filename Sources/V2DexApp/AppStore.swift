@@ -104,7 +104,8 @@ final class AppStore: ObservableObject {
                 let configData = try XrayConfigBuilder.build(node: node)
                 let snapshot = try SingboxRuntime.shared.startXray(
                     configData: configData,
-                    mode: .full
+                    mode: .full,
+                    socksOnlySystemProxy: node.protocolType == "socks5"
                 )
 
                 await MainActor.run {

@@ -87,6 +87,19 @@ final class MacSystemProxyController {
         })
     }
 
+    func enableV2DexSocksOnlyProxySettings(host: String, socksPort: Int) throws {
+        let services = try primaryProxyCleanupServices()
+        let socksPortValue = String(socksPort)
+        try runProxyCommands(services.flatMap { service in
+            [
+                ["-setsocksfirewallproxy", service, host, socksPortValue],
+                ["-setwebproxystate", service, "off"],
+                ["-setsecurewebproxystate", service, "off"],
+                ["-setsocksfirewallproxystate", service, "on"]
+            ]
+        })
+    }
+
     @discardableResult
     func enableRouterSocksProxySettings(port: Int) throws -> String {
         let routerHost = try defaultRouterIPAddress()

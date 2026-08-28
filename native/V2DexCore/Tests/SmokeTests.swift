@@ -255,4 +255,30 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(transport["early_data_header_name"] as? String, "Sec-WebSocket-Protocol")
         XCTAssertEqual(headers["Host"], "still-sea-119b.karoos12345.workers.dev")
     }
+
+    func testImportsAuthenticatedSocksUriWithBase64UserInfo() async throws {
+        let raw = "socks://aG9tZV9jNTFmNzliYTo2N2E0MDE2ZjA1YmJiNmE2OThmYjk4ZjM%3D@5.160.218.99:21810#VPS"
+
+        let nodes = try await SubscriptionImporter.importRaw(raw)
+        let node = try XCTUnwrap(nodes.first)
+
+        XCTAssertEqual(node.protocolType, "socks5")
+        XCTAssertEqual(node.name, "VPS")
+        XCTAssertEqual(node.server, "5.160.218.99")
+        XCTAssertEqual(node.port, 21810)
+        XCTAssertEqual(node.username, "home_c51f79ba")
+        XCTAssertEqual(node.password, "67a4016f05bbb6a698fb98f3")
+
+        let data = try XrayConfigBuilder.build(node: node)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let outbounds = try XCTUnwrap(json["outbounds"] as? [[String: Any]])
+        let proxy = try XCTUnwrap(outbounds.first { $0["tag"] as? String == "proxy" })
+        let settings = try XCTUnwrap(proxy["settings"] as? [String: Any])
+        let servers = try XCTUnwrap(settings["servers"] as? [[String: Any]])
+        let users = try XCTUnwrap(servers.first?["users"] as? [[String: String]])
+
+        XCTAssertEqual(proxy["protocol"] as? String, "socks")
+        XCTAssertEqual(users.first?["user"], "home_c51f79ba")
+        XCTAssertEqual(users.first?["pass"], "67a4016f05bbb6a698fb98f3")
+    }
 }

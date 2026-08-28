@@ -144,23 +144,41 @@ public enum XrayConfigBuilder {
         case "socks5":
             outbound["protocol"] = "socks"
             outbound.removeValue(forKey: "streamSettings")
+            var server: [String: Any] = [
+                "address": node.server,
+                "port": node.port
+            ]
+            if let username = node.username, !username.isEmpty {
+                server["users"] = [
+                    [
+                        "user": username,
+                        "pass": node.password ?? ""
+                    ]
+                ]
+            }
             outbound["settings"] = [
                 "servers": [
-                    [
-                        "address": node.server,
-                        "port": node.port
-                    ]
+                    server
                 ]
             ]
         case "http", "https":
             outbound["protocol"] = "http"
             outbound.removeValue(forKey: "streamSettings")
+            var server: [String: Any] = [
+                "address": node.server,
+                "port": node.port
+            ]
+            if let username = node.username, !username.isEmpty {
+                server["users"] = [
+                    [
+                        "user": username,
+                        "pass": node.password ?? ""
+                    ]
+                ]
+            }
             outbound["settings"] = [
                 "servers": [
-                    [
-                        "address": node.server,
-                        "port": node.port
-                    ]
+                    server
                 ]
             ]
         default:

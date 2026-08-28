@@ -68,19 +68,26 @@ public enum SubscriptionImporter {
     }
 
     private static func buildNode(from raw: String) throws -> ProxyNode {
-        if raw.hasPrefix("vless://"), let parsed = parseVLESS(raw) {
+        let normalizedRaw = normalizeProxyURI(raw)
+        let lowercasedRaw = normalizedRaw.lowercased()
+
+        if lowercasedRaw.hasPrefix("vless://"), let parsed = parseVLESS(normalizedRaw) {
             return parsed
         }
-        if raw.hasPrefix("vmess://"), let parsed = parseVMess(raw) {
+        if lowercasedRaw.hasPrefix("vmess://"), let parsed = parseVMess(normalizedRaw) {
             return parsed
         }
-        if raw.hasPrefix("hysteria2://"), let parsed = parseHysteria2(raw) {
+        if lowercasedRaw.hasPrefix("hysteria2://"), let parsed = parseHysteria2(normalizedRaw) {
             return parsed
         }
-        if raw.hasPrefix("tuic://"), let parsed = parseTuic(raw) {
+        if lowercasedRaw.hasPrefix("tuic://"), let parsed = parseTuic(normalizedRaw) {
             return parsed
         }
-        if raw.hasPrefix("trojan://"), let parsed = parseTrojan(raw) {
+        if lowercasedRaw.hasPrefix("trojan://"), let parsed = parseTrojan(normalizedRaw) {
+            return parsed
+        }
+        if (lowercasedRaw.hasPrefix("socks://") || lowercasedRaw.hasPrefix("socks5://")),
+           let parsed = parseSocks(normalizedRaw) {
             return parsed
         }
 
@@ -243,6 +250,58 @@ public enum SubscriptionImporter {
         )
     }
 
+    private static func parseSocks(_ raw: String) -> ProxyNode? {
+        guard let components = URLComponents(string: raw),
+              let host = components.host else {
+            return nil
+        }
+
+        let port = components.port ?? 1080
+        let label = decodePercentEncodingRepeatedly(components.fragment) ?? "SOCKS \(host):\(port)"
+        let decodedUser = decodePercentEncodingRepeatedly(components.user)
+        let decodedPassword = decodePercentEncodingRepeatedly(components.password)
+        let credentials = socksCredentials(user: decodedUser, password: decodedPassword)
+
+        return ProxyNode(
+            id: stableNodeID(from: raw),
+            name: label,
+            protocolType: "socks5",
+            server: host,
+            port: port,
+            username: credentials.username,
+            security: "none",
+            transport: nil,
+            sni: nil,
+            path: nil,
+            password: credentials.password
+        )
+    }
+
+    private static func socksCredentials(user: String?, password: String?) -> (username: String?, password: String?) {
+        if let password {
+            return (emptyToNil(user), emptyToNil(password))
+        }
+
+        guard let user, !user.isEmpty else {
+            return (nil, nil)
+        }
+
+        if let decoded = decodeBase64Like(user),
+           let separator = decoded.firstIndex(of: ":") {
+            let username = String(decoded[..<separator])
+            let passwordStart = decoded.index(after: separator)
+            let password = String(decoded[passwordStart...])
+            return (emptyToNil(username), emptyToNil(password))
+        }
+
+        return (emptyToNil(user), nil)
+    }
+
+    private static func emptyToNil(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
+
     private static func decodeSubscriptionBodyIfNeeded(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.contains("://") {
@@ -252,16 +311,27 @@ public enum SubscriptionImporter {
     }
 
     private static func decodeBase64Like(_ raw: String) -> String? {
-        let sanitized = raw
+        let sanitized = (raw.removingPercentEncoding ?? raw)
             .replacingOccurrences(of: "\n", with: "")
             .replacingOccurrences(of: "\r", with: "")
             .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
         let padding = (4 - (sanitized.count % 4)) % 4
         let padded = sanitized + String(repeating: "=", count: padding)
         guard let data = Data(base64Encoded: padded) else {
             return nil
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    private static func normalizeProxyURI(_ raw: String) -> String {
+        raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\\://"#, with: "://")
+            .replacingOccurrences(of: #"\\@"#, with: "@")
+            .replacingOccurrences(of: #"\://"#, with: "://")
+            .replacingOccurrences(of: #"\@"#, with: "@")
     }
 
     private static func decodeResponseBody(_ data: Data) -> String {

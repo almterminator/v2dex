@@ -1,14 +1,20 @@
 import {ProxyNode, SubscriptionProfile} from '../types/proxy';
 
 export function buildNodeFromUri(uri: string): ProxyNode {
-  if (uri.startsWith('vless://')) {
-    return parseVlessUri(uri);
+  const normalizedUri = normalizeProxyUri(uri);
+  const lowercasedUri = normalizedUri.toLowerCase();
+
+  if (lowercasedUri.startsWith('vless://')) {
+    return parseVlessUri(normalizedUri);
   }
-  if (uri.startsWith('hysteria2://')) {
-    return parseHysteria2Uri(uri);
+  if (lowercasedUri.startsWith('hysteria2://')) {
+    return parseHysteria2Uri(normalizedUri);
   }
-  if (uri.startsWith('tuic://')) {
-    return parseTuicUri(uri);
+  if (lowercasedUri.startsWith('tuic://')) {
+    return parseTuicUri(normalizedUri);
+  }
+  if (lowercasedUri.startsWith('socks://') || lowercasedUri.startsWith('socks5://')) {
+    return parseSocksUri(normalizedUri);
   }
 
   throw new Error('Unsupported config format.');
@@ -93,6 +99,87 @@ function parseTuicUri(uri: string): ProxyNode {
   };
 }
 
+function parseSocksUri(uri: string): ProxyNode {
+  const parsed = new URL(uri);
+  const credentials = parseSocksCredentials(parsed.username, parsed.password);
+  return {
+    id: `node-${hashString(uri)}`,
+    name: decodePercentEncodingRepeatedly(parsed.hash.replace(/^#/, '')) || `SOCKS ${parsed.hostname}:${parsed.port || 1080}`,
+    protocol: 'socks5',
+    server: parsed.hostname,
+    port: Number(parsed.port || 1080),
+    username: credentials.username,
+    password: credentials.password,
+    security: 'none',
+    rawUri: uri,
+  };
+}
+
+function parseSocksCredentials(username: string, password: string) {
+  const decodedUser = decodePercentEncodingRepeatedly(username || '');
+  const decodedPassword = decodePercentEncodingRepeatedly(password || '');
+
+  if (decodedPassword) {
+    return {username: decodedUser || undefined, password: decodedPassword};
+  }
+
+  const decodedBase64 = decodeBase64Like(decodedUser);
+  const separator = decodedBase64?.indexOf(':') ?? -1;
+  if (decodedBase64 && separator >= 0) {
+    return {
+      username: decodedBase64.slice(0, separator) || undefined,
+      password: decodedBase64.slice(separator + 1) || undefined,
+    };
+  }
+
+  return {username: decodedUser || undefined, password: undefined};
+}
+
+function decodeBase64Like(value: string) {
+  if (!value) {
+    return undefined;
+  }
+  const sanitized = value
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .replace(/\s/g, '');
+  try {
+    return decodeURIComponent(
+      Array.from(decodeBase64ASCII(sanitized))
+        .map(char => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join(''),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeBase64ASCII(value: string) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const padded = value + '='.repeat((4 - (value.length % 4)) % 4);
+  let output = '';
+  let buffer = 0;
+  let bits = 0;
+
+  for (const char of padded) {
+    if (char === '=') {
+      break;
+    }
+    const index = alphabet.indexOf(char);
+    if (index < 0) {
+      throw new Error('Invalid base64 character.');
+    }
+    buffer = (buffer << 6) | index;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      output += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+
+  return output;
+}
+
 function hashString(value: string) {
   return Array.from(value)
     .reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) >>> 0, 7)
@@ -137,7 +224,16 @@ export function extractNodeUris(sourceValue: string) {
     .split(/[\r\n\s]+/)
     .map(line => line.trim())
     .filter(Boolean)
-    .filter(line => /^(vless|hysteria2|tuic):\/\//i.test(line));
+    .filter(line => /^(vless|hysteria2|tuic|socks|socks5):\/\//i.test(normalizeProxyUri(line)));
+}
+
+function normalizeProxyUri(value: string) {
+  return value
+    .trim()
+    .replace(/\\\\:\/\//g, '://')
+    .replace(/\\:\/\//g, '://')
+    .replace(/\\\\@/g, '@')
+    .replace(/\\@/g, '@');
 }
 
 export function buildManualProfile(input: {

@@ -217,6 +217,7 @@ public final class SingboxRuntime: @unchecked Sendable {
     public func startXray(
         configData: Data,
         mode: TunnelMode,
+        socksOnlySystemProxy: Bool = false,
         binaryPath explicitBinaryPath: String? = nil
     ) throws -> TunnelStatusSnapshot {
         guard let resolvedBinaryPath = resolveXrayBinaryPath(explicitPath: explicitBinaryPath) else {
@@ -278,7 +279,11 @@ public final class SingboxRuntime: @unchecked Sendable {
         do {
             try process.run()
             try waitForProxyReady(process: process)
-            try enableManagedSystemProxyIfNeeded(mode: mode, splitPorts: true)
+            try enableManagedSystemProxyIfNeeded(
+                mode: mode,
+                splitPorts: true,
+                socksOnly: socksOnlySystemProxy
+            )
             stateQueue.sync {
                 self.proxiedAppBundleIDs = []
                 self.unsupportedPerAppBundleIDs = []
@@ -418,12 +423,17 @@ public final class SingboxRuntime: @unchecked Sendable {
     }
 
     private func enableManagedSystemProxyIfNeeded(mode: TunnelMode) throws {
-        try enableManagedSystemProxyIfNeeded(mode: mode, splitPorts: false)
+        try enableManagedSystemProxyIfNeeded(mode: mode, splitPorts: false, socksOnly: false)
     }
 
-    private func enableManagedSystemProxyIfNeeded(mode: TunnelMode, splitPorts: Bool) throws {
+    private func enableManagedSystemProxyIfNeeded(mode: TunnelMode, splitPorts: Bool, socksOnly: Bool) throws {
         guard mode == .full else { return }
-        if splitPorts {
+        if socksOnly {
+            try proxyController.enableV2DexSocksOnlyProxySettings(
+                host: SingboxConfigBuilder.loopbackProxyHost,
+                socksPort: XrayConfigBuilder.localSocksProxyPort
+            )
+        } else if splitPorts {
             try proxyController.enableV2DexProxySettings(
                 host: SingboxConfigBuilder.loopbackProxyHost,
                 httpPort: XrayConfigBuilder.localHTTPProxyPort,

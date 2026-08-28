@@ -16,6 +16,7 @@ public struct ProxyNode: Codable, Identifiable {
     public let protocolType: String
     public let server: String
     public let port: Int
+    public let username: String?
     public let security: String?
     public let transport: String?
     public let sni: String?
@@ -39,6 +40,7 @@ public struct ProxyNode: Codable, Identifiable {
         case protocolType = "protocol"
         case server
         case port
+        case username
         case security
         case transport
         case sni
@@ -63,6 +65,7 @@ public struct ProxyNode: Codable, Identifiable {
         protocolType: String,
         server: String,
         port: Int,
+        username: String? = nil,
         security: String?,
         transport: String?,
         sni: String?,
@@ -85,6 +88,7 @@ public struct ProxyNode: Codable, Identifiable {
         self.protocolType = protocolType
         self.server = server
         self.port = port
+        self.username = username
         self.security = security
         self.transport = transport
         self.sni = sni
