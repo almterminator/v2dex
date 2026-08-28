@@ -318,10 +318,7 @@ struct DashboardView: View {
         } label: {
             liquidCard(height: 74, selected: profile.id == store.activeProfile?.id) {
                 HStack(spacing: 12) {
-                    Image(systemName: profile.id == store.activeProfile?.id ? "checkmark" : "server.rack")
-                        .font(.system(size: 20, weight: .black))
-                        .foregroundStyle(profile.id == store.activeProfile?.id ? Theme.currentAccent(store) : .white.opacity(0.82))
-                        .frame(width: 34, height: 40)
+                    profileFlag(for: profile)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(profile.title)
@@ -357,6 +354,22 @@ struct DashboardView: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func profileFlag(for profile: ProfileSummary) -> some View {
+        if let countryCode = store.profileCountryCodes[profile.id] {
+            Text(flagEmoji(countryCode))
+                .font(.system(size: 34, weight: .black))
+                .frame(width: 42, height: 44)
+                .accessibilityLabel(Text(countryCode))
+        } else {
+            Image(systemName: "globe")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Theme.accentGradient(store))
+                .symbolVariant(.none)
+                .frame(width: 42, height: 44)
         }
     }
 

@@ -21,6 +21,7 @@ final class AppStore: ObservableObject {
     @Published var updatingSubscriptionIDs: Set<String> = []
     @Published var collapsedSubscriptionIDs: Set<String> = []
     @Published var profilePingStates: [String: ProfilePingState] = [:]
+    @Published var profileCountryCodes: [String: String] = [:]
     @Published var routerSocksModeEnabled = false
     private var routerSocksProxyActive = false
 
@@ -34,9 +35,9 @@ final class AppStore: ObservableObject {
         "http://cp.cloudflare.com/generate_204"
     ]
     nonisolated private static let exitLookupURLs = [
-        "https://ipapi.co/json/",
         "https://ipinfo.io/json",
-        "https://ipwho.is/"
+        "https://ipwho.is/",
+        "https://ipapi.co/json/"
     ]
 
     private struct PersistedAppState: Codable {
@@ -47,6 +48,7 @@ final class AppStore: ObservableObject {
         var activeNodeId: String?
         var mode: TunnelMode?
         var collapsedSubscriptionIDs: [String]?
+        var profileCountryCodes: [String: String]?
         var routerSocksModeEnabled: Bool?
     }
 
@@ -450,9 +452,15 @@ final class AppStore: ObservableObject {
 
         Task {
             do {
-                let latency = try await measuredLatency(for: node, profileID: profile.id)
+                async let measured = measuredLatency(for: node, profileID: profile.id)
+                async let countryCode = Self.resolveProfileCountryCode(profile)
+                let latency = try await measured
+                let resolvedCountryCode = await countryCode
                 await MainActor.run {
                     profilePingStates[profile.id] = latency > 850 ? .timeout : .latency(latency)
+                    if let resolvedCountryCode {
+                        profileCountryCodes[profile.id] = resolvedCountryCode
+                    }
                     lastPingMs = latency
                     lastPingProfileID = profile.id
                     statusLine = latency > 850 ? "Ping failed for \(profile.title)" : "Pinged \(profile.title) in \(latency) ms"
@@ -515,27 +523,31 @@ final class AppStore: ObservableObject {
             let endIndex = min(startIndex + Self.pingBatchSize, targets.count)
             let batch = Array(targets[startIndex..<endIndex])
 
-            await withTaskGroup(of: (String, Int?).self) { group in
+            await withTaskGroup(of: (String, Int?, String?).self) { group in
                 for profile in batch {
                     group.addTask {
                         guard let node = profile.nodes.first else {
-                            return (profile.id, nil)
+                            return (profile.id, nil, nil)
                         }
+                        async let countryCode = Self.resolveProfileCountryCode(profile)
                         do {
                             let latency = try await Self.measuredProbeLatency(for: node)
-                            return (profile.id, latency)
+                            return (profile.id, latency, await countryCode)
                         } catch {
-                            return (profile.id, nil)
+                            return (profile.id, nil, await countryCode)
                         }
                     }
                 }
 
-                for await (profileID, latency) in group {
+                for await (profileID, latency, countryCode) in group {
                     await MainActor.run {
                         if let latency, latency <= 850 {
                             profilePingStates[profileID] = .latency(latency)
                         } else {
                             profilePingStates[profileID] = .timeout
+                        }
+                        if let countryCode {
+                            profileCountryCodes[profileID] = countryCode
                         }
                         sortProfilesByPing()
                     }
@@ -644,6 +656,93 @@ final class AppStore: ObservableObject {
         try await ConnectivityTester.testEndpointPing(to: node, timeout: proxyPingTimeout)
     }
 
+    private nonisolated static func resolveProfileCountryCode(_ profile: ProfileSummary) async -> String? {
+        if let fromText = inferCountryCode(from: "\(profile.title) \(profile.nodes.first?.name ?? "")") {
+            return fromText
+        }
+        guard let server = profile.nodes.first?.server, !server.isEmpty else {
+            return nil
+        }
+        return await lookupCountryCode(for: server)
+    }
+
+    private nonisolated static func lookupCountryCode(for server: String) async -> String? {
+        guard let encodedServer = server.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        do {
+            let response = try await ConnectivityTester.fetchTextDirect(
+                url: "http://ip-api.com/json/\(encodedServer)?fields=status,countryCode,query",
+                timeout: 2
+            )
+            guard let data = response.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  (json["status"] as? String) == "success",
+                  let code = json["countryCode"] as? String,
+                  code.count == 2
+            else {
+                return nil
+            }
+            return code.uppercased()
+        } catch {
+            return nil
+        }
+    }
+
+    private nonisolated static func inferCountryCode(from text: String) -> String? {
+        if let flagCode = countryCodeFromFlagEmoji(text) {
+            return flagCode
+        }
+
+        let normalized = text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        let names: [(String, String)] = [
+            ("united states", "US"), ("usa", "US"), ("u.s.a", "US"), ("america", "US"),
+            ("canada", "CA"),
+            ("germany", "DE"), ("deutschland", "DE"),
+            ("france", "FR"),
+            ("netherlands", "NL"), ("holland", "NL"),
+            ("united kingdom", "GB"), ("uk", "GB"), ("england", "GB"),
+            ("turkey", "TR"), ("turkiye", "TR"),
+            ("finland", "FI"),
+            ("sweden", "SE"),
+            ("norway", "NO"),
+            ("italy", "IT"),
+            ("spain", "ES"),
+            ("poland", "PL"),
+            ("romania", "RO"),
+            ("singapore", "SG"),
+            ("japan", "JP"),
+            ("korea", "KR"),
+            ("india", "IN"),
+            ("australia", "AU"),
+            ("russia", "RU"),
+            ("uae", "AE"), ("emirates", "AE"),
+            ("iran", "IR")
+        ]
+
+        return names.first { normalized.contains($0.0) }?.1
+    }
+
+    private nonisolated static func countryCodeFromFlagEmoji(_ text: String) -> String? {
+        let scalars = Array(text.unicodeScalars)
+        for index in scalars.indices.dropLast() {
+            let first = scalars[index].value
+            let second = scalars[scalars.index(after: index)].value
+            let regionalIndicatorBase: UInt32 = 127397
+            guard (127462...127487).contains(first),
+                  (127462...127487).contains(second),
+                  let firstScalar = UnicodeScalar(first - regionalIndicatorBase),
+                  let secondScalar = UnicodeScalar(second - regionalIndicatorBase)
+            else {
+                continue
+            }
+            return "\(String(firstScalar))\(String(secondScalar))"
+        }
+        return nil
+    }
+
     private func refreshExitLocation(afterConnectingTo node: ProxyNode) async {
         do {
             let response = try await Self.fetchExitLocationPayload()
@@ -652,6 +751,10 @@ final class AppStore: ObservableObject {
                 tunnel.exitIP = location.ip
                 tunnel.countryCode = location.countryCode
                 tunnel.countryName = location.countryName
+                if let profileID = tunnel.selectedProfileID, let countryCode = location.countryCode {
+                    profileCountryCodes[profileID] = countryCode
+                    persistState()
+                }
                 statusLine = "Connected via \(node.name)"
             }
         } catch {
@@ -665,12 +768,15 @@ final class AppStore: ObservableObject {
         var lastError: Error?
         for url in exitLookupURLs {
             do {
-                return try await ConnectivityTester.fetchTextViaLocalProxy(
+                let response = try await ConnectivityTester.fetchTextViaLocalProxy(
                     url: url,
                     proxyHost: SingboxConfigBuilder.loopbackProxyHost,
                     proxyPort: SingboxConfigBuilder.localProxyPort,
                     timeout: 4
                 )
+                if response.contains("country") || response.contains("country_code") || response.contains("countryCode") {
+                    return response
+                }
             } catch {
                 lastError = error
             }
@@ -686,8 +792,11 @@ final class AppStore: ObservableObject {
         }
 
         let ip = json["ip"] as? String ?? json["query"] as? String
-        let countryCode = json["country_code"] as? String ?? json["countryCode"] as? String
-        let countryName = json["country"] as? String ?? json["country_name"] as? String
+        let country = json["country"] as? String
+        let countryCode = json["country_code"] as? String
+            ?? json["countryCode"] as? String
+            ?? (country?.count == 2 ? country : nil)
+        let countryName = (country?.count == 2 ? nil : country) ?? json["country_name"] as? String
         return (ip, countryCode?.uppercased(), countryName)
     }
 
@@ -727,6 +836,7 @@ final class AppStore: ObservableObject {
             activeNodeId: tunnel.selectedNodeID,
             mode: tunnel.mode,
             collapsedSubscriptionIDs: Array(collapsedSubscriptionIDs),
+            profileCountryCodes: profileCountryCodes,
             routerSocksModeEnabled: routerSocksModeEnabled
         )
         let encoder = JSONEncoder()
@@ -784,6 +894,7 @@ final class AppStore: ObservableObject {
         tunnel.selectedNodeID = state.activeNodeId
         tunnel.mode = state.mode ?? .full
         collapsedSubscriptionIDs = Set(state.collapsedSubscriptionIDs ?? [])
+        profileCountryCodes = state.profileCountryCodes ?? [:]
         routerSocksModeEnabled = state.routerSocksModeEnabled ?? false
         statusLine = "Loaded saved config"
     }

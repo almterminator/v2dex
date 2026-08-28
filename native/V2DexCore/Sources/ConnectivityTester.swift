@@ -264,6 +264,19 @@ public enum ConnectivityTester {
         )
     }
 
+    public static func fetchTextDirect(url: String, timeout: TimeInterval = 5) async throws -> String {
+        try await runCurl(
+            arguments: [
+                "--silent",
+                "--show-error",
+                "--max-time",
+                String(format: "%.2f", timeout),
+                url
+            ],
+            timeout: timeout + 1
+        )
+    }
+
     private static func runCurl(arguments: [String], timeout: TimeInterval) async throws -> String {
         try await runCommand(path: "/usr/bin/curl", arguments: arguments, timeout: timeout)
     }
