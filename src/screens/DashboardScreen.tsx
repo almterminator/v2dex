@@ -40,6 +40,7 @@ export function DashboardScreen() {
   const {
     activeProfile,
     activeNode,
+    autoConnectSpotifyEnabled,
     appRules,
     connect,
     disconnect,
@@ -62,6 +63,7 @@ export function DashboardScreen() {
     selectProfile,
     setImportDraft,
     setMode,
+    setSpotifyAutoConnectEnabled,
     toggleAppRule,
     tunnel
   } = useAppStore();
@@ -292,6 +294,13 @@ export function DashboardScreen() {
       }
     },
     [connect, disconnect, toggleAppRule, tunnel.connected, tunnel.mode],
+  );
+
+  const handleSpotifyAutoConnectToggle = React.useCallback(
+    async (enabled: boolean) => {
+      await setSpotifyAutoConnectEnabled(enabled);
+    },
+    [setSpotifyAutoConnectEnabled],
   );
 
   const handlePingAllProfiles = React.useCallback(async () => {
@@ -1055,6 +1064,21 @@ export function DashboardScreen() {
             />
 
             <View style={styles.ruleList}>
+              {Platform.OS === 'android' ? (
+                <View style={[styles.ruleRow, styles.spotifyAutoConnectRow]}>
+                  <View style={styles.ruleCopy}>
+                    <Text style={[styles.ruleTitle, textDirectionStyle]}>{t('spotifyAutoConnect')}</Text>
+                    <Text style={[styles.ruleMeta, textDirectionStyle]}>{t('spotifyAutoConnectLead')}</Text>
+                  </View>
+                  <Switch
+                    value={autoConnectSpotifyEnabled}
+                    onValueChange={value => void handleSpotifyAutoConnectToggle(value)}
+                    trackColor={{false: 'rgba(255,255,255,0.20)', true: 'rgba(57,217,138,0.45)'}}
+                    thumbColor={autoConnectSpotifyEnabled ? colors.success : colors.textSecondary}
+                  />
+                </View>
+              ) : null}
+
               {filteredAppRules.length === 0 ? (
                 <Text style={[styles.emptySearchText, textDirectionStyle]}>{t('noMatchingApps')}</Text>
               ) : filteredAppRules.map(rule => (
@@ -1965,6 +1989,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.08)'
   },
+  ruleCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: spacing.md,
+  },
+  spotifyAutoConnectRow: {
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
   profileRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2601,6 +2635,8 @@ const translations = {
     searchApps: 'Search apps',
     serverConnection: 'Server Connection',
     standby: 'Standby',
+    spotifyAutoConnect: 'Auto-connect for Spotify',
+    spotifyAutoConnectLead: 'Keep a small background monitor on and connect when Spotify opens.',
     chooseQrImage: 'Choose QR image',
     switchToFullTunnel: 'Switch to Full Tunnel',
     switchToPerApp: 'Switch to Per-App',
@@ -2676,6 +2712,8 @@ const translations = {
     searchApps: 'جستجوی اپ‌ها',
     serverConnection: 'اتصال به سرور',
     standby: 'آماده',
+    spotifyAutoConnect: 'اتصال خودکار اسپاتیفای',
+    spotifyAutoConnectLead: 'یک مانیتور سبک در بکگراند روشن می‌ماند و با باز شدن Spotify وصل می‌شود.',
     chooseQrImage: 'انتخاب عکس QR',
     switchToFullTunnel: 'تغییر به فول تانل',
     switchToPerApp: 'تغییر به پر اپ',

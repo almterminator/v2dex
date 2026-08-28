@@ -12,6 +12,8 @@ import {
   savePersistedAppState,
   scanQrFromCamera as scanNativeQrFromCamera,
   scanQrFromGallery as scanNativeQrFromGallery,
+  getSpotifyAutoConnectEnabled as getNativeSpotifyAutoConnectEnabled,
+  setSpotifyAutoConnect as setNativeSpotifyAutoConnect,
   startNativeTunnel,
   stopNativeTunnel,
   testProfileDownload as runProfileDownloadTest,
@@ -100,6 +102,7 @@ interface PersistedAppState {
     mode?: TunnelMode;
     error?: string;
   };
+  autoConnectSpotifyEnabled?: boolean;
 }
 
 interface AppState {
@@ -108,6 +111,7 @@ interface AppState {
   appRules: AppRouteRule[];
   tunnel: TunnelStatus;
   importDraft: string;
+  autoConnectSpotifyEnabled: boolean;
   activeProfile?: SubscriptionProfile;
   activeNode?: ProxyNode;
   hydrate: () => Promise<void>;
@@ -117,6 +121,7 @@ interface AppState {
   toggleAppRule: (bundleId: string) => void;
   setImportDraft: (value: string) => void;
   setConnecting: (connecting: boolean) => void;
+  setSpotifyAutoConnectEnabled: (enabled: boolean) => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   importProfile: (profile: SubscriptionProfile) => Promise<void>;
@@ -202,6 +207,7 @@ function serializeState(state: AppState): PersistedAppState {
     activeNodeId: state.activeNode?.id,
     importDraft: state.importDraft,
     mode: state.tunnel.mode,
+    autoConnectSpotifyEnabled: state.autoConnectSpotifyEnabled,
   };
 }
 
@@ -291,6 +297,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   appRules: [],
   tunnel: defaultTunnel,
   importDraft: '',
+  autoConnectSpotifyEnabled: false,
   activeProfile: undefined,
   activeNode: undefined,
   hydrate: async () => {
@@ -305,6 +312,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         const appRules = withDefaultDesktopAppRules((parsed.appRules ?? []).filter(isVisibleAppRule));
         const activeProfile = pickActiveProfile(parsed.profiles ?? [], parsed.activeProfileId);
         const activeNode = pickActiveNode(activeProfile, parsed.activeNodeId);
+        const nativeSpotifyAutoConnectEnabled = Platform.OS === 'android'
+          ? await getNativeSpotifyAutoConnectEnabled()
+          : false;
 
         set(state => ({
           ...state,
@@ -312,6 +322,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           profiles: parsed.profiles ?? [],
           appRules,
           importDraft: parsed.importDraft ?? '',
+          autoConnectSpotifyEnabled: nativeSpotifyAutoConnectEnabled,
           activeProfile,
           activeNode,
           tunnel: {
@@ -322,7 +333,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
         }));
       } else {
-        set({hydrated: true, appRules: withDefaultDesktopAppRules([])});
+        set({
+          hydrated: true,
+          appRules: withDefaultDesktopAppRules([]),
+          autoConnectSpotifyEnabled: Platform.OS === 'android'
+            ? await getNativeSpotifyAutoConnectEnabled()
+            : false,
+        });
       }
     } catch {
       set({hydrated: true});
@@ -345,6 +362,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     void persistStateSnapshot(get());
+    if (get().autoConnectSpotifyEnabled && Platform.OS === 'android') {
+      void setNativeSpotifyAutoConnect({
+        enabled: true,
+        node,
+        mode: get().tunnel.mode,
+        appRules: get().appRules,
+      }).catch(error => {
+        const message = error instanceof Error ? error.message : 'Spotify auto-connect update failed.';
+        set(current => ({tunnel: {...current.tunnel, lastError: message}}));
+      });
+    }
   },
   selectProfile: profileId => {
     const profile = get().profiles.find(item => item.id === profileId);
@@ -362,6 +390,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     void persistStateSnapshot(get());
+    if (get().autoConnectSpotifyEnabled && Platform.OS === 'android') {
+      void setNativeSpotifyAutoConnect({
+        enabled: true,
+        node: profile.nodes[0],
+        mode: get().tunnel.mode,
+        appRules: get().appRules,
+      }).catch(error => {
+        const message = error instanceof Error ? error.message : 'Spotify auto-connect update failed.';
+        set(current => ({tunnel: {...current.tunnel, lastError: message}}));
+      });
+    }
   },
   setMode: mode => {
     set(state => ({
@@ -371,6 +410,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     void persistStateSnapshot(get());
+    if (get().autoConnectSpotifyEnabled && Platform.OS === 'android') {
+      void setNativeSpotifyAutoConnect({
+        enabled: true,
+        node: get().activeNode,
+        mode,
+        appRules: get().appRules,
+      }).catch(error => {
+        const message = error instanceof Error ? error.message : 'Spotify auto-connect update failed.';
+        set(current => ({tunnel: {...current.tunnel, lastError: message}}));
+      });
+    }
   },
   toggleAppRule: bundleId => {
     set(state => ({
@@ -379,6 +429,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
     void persistStateSnapshot(get());
+    if (get().autoConnectSpotifyEnabled && Platform.OS === 'android') {
+      void setNativeSpotifyAutoConnect({
+        enabled: true,
+        node: get().activeNode,
+        mode: get().tunnel.mode,
+        appRules: get().appRules,
+      }).catch(error => {
+        const message = error instanceof Error ? error.message : 'Spotify auto-connect update failed.';
+        set(current => ({tunnel: {...current.tunnel, lastError: message}}));
+      });
+    }
   },
   setImportDraft: value => {
     set({importDraft: value});
@@ -391,6 +452,35 @@ export const useAppStore = create<AppState>((set, get) => ({
         connecting,
       },
     }));
+  },
+  setSpotifyAutoConnectEnabled: async enabled => {
+    const state = get();
+    try {
+      await setNativeSpotifyAutoConnect({
+        enabled,
+        node: state.activeNode,
+        mode: state.tunnel.mode,
+        appRules: state.appRules,
+      });
+      set(current => ({
+        autoConnectSpotifyEnabled: enabled,
+        tunnel: {
+          ...current.tunnel,
+          lastError: undefined,
+        },
+      }));
+      await persistStateSnapshot(get());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Spotify auto-connect update failed.';
+      set(current => ({
+        autoConnectSpotifyEnabled: false,
+        tunnel: {
+          ...current.tunnel,
+          lastError: message,
+        },
+      }));
+      await persistStateSnapshot(get());
+    }
   },
   connect: async () => {
     const state = get();
@@ -440,6 +530,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeNodeId: state.activeNode.id,
         mode: state.tunnel.mode,
       });
+      if (get().autoConnectSpotifyEnabled && Platform.OS === 'android') {
+        void setNativeSpotifyAutoConnect({
+          enabled: true,
+          node: state.activeNode,
+          mode: state.tunnel.mode,
+          appRules: state.appRules,
+        }).catch(error => {
+          const message = error instanceof Error ? error.message : 'Spotify auto-connect update failed.';
+          set(current => ({tunnel: {...current.tunnel, lastError: message}}));
+        });
+      }
       set(current => ({
         tunnel: {
           ...current.tunnel,
@@ -517,6 +618,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
     await persistStateSnapshot(get());
+    if (get().autoConnectSpotifyEnabled && Platform.OS === 'android') {
+      try {
+        await setNativeSpotifyAutoConnect({
+          enabled: true,
+          node: profile.nodes[0],
+          mode: get().tunnel.mode,
+          appRules: get().appRules,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Spotify auto-connect update failed.';
+        set(current => ({tunnel: {...current.tunnel, lastError: message}}));
+      }
+    }
   },
   importFromClipboard: async text => {
     const source = text ?? (await importClipboardText());

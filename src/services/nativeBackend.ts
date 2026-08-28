@@ -212,6 +212,40 @@ export async function stopNativeTunnel() {
   await bridge.stopTunnel();
 }
 
+export async function getSpotifyAutoConnectEnabled() {
+  const bridge = getDesktopBridge();
+  if (!bridge || Platform.OS !== 'android') {
+    return false;
+  }
+
+  return bridge.isSpotifyAutoConnectEnabled();
+}
+
+export async function setSpotifyAutoConnect(input: {
+  enabled: boolean;
+  node?: ProxyNode;
+  mode: TunnelMode;
+  appRules: AppRouteRule[];
+}) {
+  const bridge = getDesktopBridge();
+  if (!bridge || Platform.OS !== 'android') {
+    return;
+  }
+
+  const configJson = input.enabled && input.node
+    ? JSON.stringify(buildXrayConfig({
+        node: input.node,
+      }), null, 2)
+    : '{}';
+
+  await bridge.setSpotifyAutoConnectEnabled(
+    input.enabled,
+    configJson,
+    input.mode,
+    JSON.stringify(input.appRules),
+  );
+}
+
 async function importSubscriptionWithFetch(uri: string): Promise<{
   nodes: ProxyNode[];
   usage?: ImportedProfilePayload['usage'];

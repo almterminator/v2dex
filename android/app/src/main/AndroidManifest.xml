@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -48,6 +49,15 @@
         <intent-filter>
           <action android:name="android.net.VpnService" />
         </intent-filter>
+      </service>
+      <service
+        android:name=".SpotifyAutoConnectService"
+        android:exported="false"
+        android:stopWithTask="false"
+        android:foregroundServiceType="specialUse">
+        <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="spotify_auto_connect_monitor" />
       </service>
     </application>
 </manifest>

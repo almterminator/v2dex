@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.net.Uri
 import android.provider.MediaStore
+import android.provider.Settings
 import android.os.Build
 import android.util.Base64
 import android.util.Log
@@ -216,6 +217,8 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
                 "com.chrome.beta",
                 "com.chrome.dev",
                 "com.chrome.canary",
+                "com.spotify.music",
+                "com.spotify.lite",
                 "com.google.android.googlequicksearchbox",
                 "com.google.android.apps.bard",
                 "com.openai.chatgpt",
@@ -654,6 +657,60 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
   @ReactMethod
   fun getTunnelStatus(promise: Promise) {
     promise.resolve(statusMap())
+  }
+
+  @ReactMethod
+  fun hasUsageAccessPermission(promise: Promise) {
+    promise.resolve(SpotifyAutoConnectService.hasUsageStatsPermission(reactContext))
+  }
+
+  @ReactMethod
+  fun openUsageAccessSettings(promise: Promise) {
+    try {
+      val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      reactContext.startActivity(intent)
+      promise.resolve(null)
+    } catch (error: Exception) {
+      promise.reject("E_USAGE_ACCESS_SETTINGS", error.message ?: "Could not open Usage Access settings.")
+    }
+  }
+
+  @ReactMethod
+  fun isSpotifyAutoConnectEnabled(promise: Promise) {
+    promise.resolve(SpotifyAutoConnectService.isEnabled(reactContext))
+  }
+
+  @ReactMethod
+  fun setSpotifyAutoConnectEnabled(
+      enabled: Boolean,
+      configJson: String,
+      mode: String,
+      appRulesJson: String,
+      promise: Promise
+  ) {
+    try {
+      if (enabled) {
+        if (configJson.isBlank() || configJson == "{}") {
+          promise.reject("E_SPOTIFY_AUTO_CONFIG", "Select a config before enabling Spotify auto-connect.")
+          return
+        }
+        if (VpnService.prepare(reactContext) != null) {
+          promise.reject("E_VPN_PERMISSION", "Connect once manually before enabling Spotify auto-connect.")
+          return
+        }
+        if (!SpotifyAutoConnectService.hasUsageStatsPermission(reactContext)) {
+          val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          reactContext.startActivity(intent)
+          promise.reject("E_USAGE_ACCESS", "Allow Usage Access for V2DEX, then enable Spotify auto-connect again.")
+          return
+        }
+      }
+
+      SpotifyAutoConnectService.setEnabled(reactContext, enabled, configJson, mode, appRulesJson)
+      promise.resolve(null)
+    } catch (error: Exception) {
+      promise.reject("E_SPOTIFY_AUTO_CONNECT", error.message ?: "Could not update Spotify auto-connect.")
+    }
   }
 
   private fun startVpn(configJson: String, mode: String, appRulesJson: String, promise: Promise) {

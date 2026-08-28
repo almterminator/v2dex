@@ -55,6 +55,15 @@ export interface V2DexNativeModule {
     proxyHost?: string;
     proxyPort?: number;
   }>;
+  hasUsageAccessPermission(): Promise<boolean>;
+  openUsageAccessSettings(): Promise<void>;
+  isSpotifyAutoConnectEnabled(): Promise<boolean>;
+  setSpotifyAutoConnectEnabled(
+    enabled: boolean,
+    configJson: string,
+    mode: TunnelMode,
+    appRulesJson: string,
+  ): Promise<void>;
 }
 
 export const V2DexBridge = NativeModules.V2DexBridge as V2DexNativeModule | undefined;
