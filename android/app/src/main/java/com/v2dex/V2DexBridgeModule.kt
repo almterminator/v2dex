@@ -178,9 +178,14 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
         var remainingBytes: Long? = null
 
         nodeUris.forEach { nodeUri ->
-          if (nodeUri.startsWith("vless://", true)) {
-            nodes.put(parseVlessNode(nodeUri))
-            remainingBytes = remainingBytes ?: parseRemainingBytesFromName(nodeUri)
+          when {
+            nodeUri.startsWith("vless://", true) -> {
+              nodes.put(parseVlessNode(nodeUri))
+              remainingBytes = remainingBytes ?: parseRemainingBytesFromName(nodeUri)
+            }
+            nodeUri.startsWith("socks://", true) || nodeUri.startsWith("socks5://", true) -> {
+              nodes.put(parseSocksNode(nodeUri))
+            }
           }
         }
 
@@ -862,7 +867,8 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
       value
           .split("\\s+".toRegex())
           .map { it.trim() }
-          .filter { it.matches("(?i)^(vless|hysteria2|tuic)://.+".toRegex()) }
+          .map { normalizeProxyUri(it) }
+          .filter { it.matches("(?i)^(vless|hysteria2|tuic|socks|socks5)://.+".toRegex()) }
 
   private fun parseVlessNode(uri: String): JSONObject {
     val parsed = URI(uri)
@@ -902,6 +908,64 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
         }
   }
 
+  private fun parseSocksNode(uri: String): JSONObject {
+    val parsed = URI(uri)
+    val credentials = parseSocksCredentials(parsed.rawUserInfo ?: "")
+    val name =
+        decodeComponentRepeatedly(parsed.rawFragment ?: "")
+            .ifBlank { "SOCKS ${parsed.host}:${if (parsed.port > 0) parsed.port else 1080}" }
+
+    return JSONObject()
+        .put("id", "node-${hashString(uri)}")
+        .put("name", name)
+        .put("protocol", "socks5")
+        .put("server", parsed.host)
+        .put("port", if (parsed.port > 0) parsed.port else 1080)
+        .put("security", "none")
+        .put("rawUri", uri)
+        .apply {
+          putOptional("username", credentials.first)
+          putOptional("password", credentials.second)
+        }
+  }
+
+  private fun parseSocksCredentials(rawUserInfo: String): Pair<String?, String?> {
+    if (rawUserInfo.isBlank()) {
+      return null to null
+    }
+
+    val parts = rawUserInfo.split(":", limit = 2)
+    val username = decodeComponentRepeatedly(parts[0])
+    val password = parts.getOrNull(1)?.let { decodeComponentRepeatedly(it) }.orEmpty()
+
+    if (password.isNotBlank()) {
+      return username.ifBlank { null } to password
+    }
+
+    val decodedBase64 = decodeBase64Like(username)
+    val separator = decodedBase64?.indexOf(':') ?: -1
+    if (!decodedBase64.isNullOrBlank() && separator >= 0) {
+      return decodedBase64.substring(0, separator).ifBlank { null } to
+          decodedBase64.substring(separator + 1).ifBlank { null }
+    }
+
+    return username.ifBlank { null } to null
+  }
+
+  private fun decodeBase64Like(value: String): String? {
+    if (value.isBlank()) {
+      return null
+    }
+
+    return try {
+      val normalized = value.trim().replace('-', '+').replace('_', '/').replace("\\s+".toRegex(), "")
+      val padded = normalized.padEnd(((normalized.length + 3) / 4) * 4, '=')
+      String(Base64.decode(padded, Base64.DEFAULT), StandardCharsets.UTF_8)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
   private fun parseRemainingBytesFromName(uri: String): Long? {
     val fragment = URI(uri).rawFragment ?: return null
     val name = decodeComponentRepeatedly(fragment)
@@ -937,6 +1001,14 @@ class V2DexBridgeModule(private val reactContext: ReactApplicationContext) :
             val pieces = part.split("=", limit = 2)
             decodeComponent(pieces[0]) to decodeComponent(pieces.getOrElse(1) { "" })
           }
+
+  private fun normalizeProxyUri(value: String): String =
+      value
+          .trim()
+          .replace("\\\\://", "://")
+          .replace("\\://", "://")
+          .replace("\\\\@", "@")
+          .replace("\\@", "@")
 
   private fun decodeComponent(value: String): String =
       URLDecoder.decode(value, StandardCharsets.UTF_8.name())
