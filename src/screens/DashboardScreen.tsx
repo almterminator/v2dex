@@ -116,7 +116,7 @@ export function DashboardScreen() {
     latency: 0,
     settings: 0,
   });
-  const statusColor = tunnel.connecting ? colors.danger : tunnel.connected ? colors.success : colors.info;
+  const statusColor = tunnel.connecting ? colors.warning : tunnel.connected ? colors.success : colors.info;
   const statusTintSoft = withAlpha(statusColor, 0.1);
   const statusTint = withAlpha(statusColor, 0.14);
   const statusBorder = withAlpha(statusColor, 0.4);
@@ -1128,6 +1128,15 @@ export function DashboardScreen() {
 
         {isCompact ? (
           <View style={[styles.fixedActionBar, {marginBottom: insets.bottom}]}>
+            <View style={styles.fixedLocationButton}>
+              <Text style={styles.fixedLocationFlag}>
+                {tunnel.connected && tunnel.exitCountryCode ? countryCodeToFlag(tunnel.exitCountryCode) : '◎'}
+              </Text>
+              <Text numberOfLines={1} style={[styles.fixedLocationText, textDirectionStyle]}>
+                {monitorCountryLabel(tunnel.connected, tunnel.connecting, tunnel.exitCountry, tunnel.exitCountryCode, t)}
+              </Text>
+            </View>
+
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={tunnel.connected ? t('disconnect') : t('connect')}
@@ -1138,21 +1147,23 @@ export function DashboardScreen() {
                 {backgroundColor: statusColor},
                 pressed && styles.buttonPressed,
               ]}>
-              <Text style={[styles.primaryButtonText, isPersian && styles.rtlButtonText]}>
-                {tunnel.connecting ? t('connecting') : tunnel.connected ? t('disconnect') : t('connect')}
-              </Text>
+              {tunnel.connecting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Image source={powerIcon} style={styles.fixedConnectIconImage} resizeMode="contain" />
+              )}
             </Pressable>
 
-            <View
+            <Pressable
               accessibilityRole="button"
               accessibilityLabel={mobilePingLabel(tunnel.pingMs, tunnel.pingTimedOut)}
-              onStartShouldSetResponder={() => true}
-              onTouchStart={() => void refreshPing()}
-              style={styles.fixedPingButton}>
+              onPress={() => void refreshPing()}
+              style={({pressed}) => [styles.fixedPingButton, pressed && styles.buttonPressed]}>
               <Text style={[styles.fixedPingText, mobilePingColorStyle(tunnel.pingMs, tunnel.pingTimedOut)]}>
                 {mobilePingLabel(tunnel.pingMs, tunnel.pingTimedOut)}
               </Text>
-            </View>
+              <Text style={styles.fixedPingMeta}>ms</Text>
+            </Pressable>
           </View>
         ) : null}
 
@@ -1317,21 +1328,19 @@ const styles = StyleSheet.create({
   },
   glowA: {
     position: 'absolute',
-    width: 520,
-    height: 520,
-    borderRadius: 260,
-    backgroundColor: 'rgba(108, 184, 255, 0.14)',
-    top: -120,
-    right: -80
+    left: 0,
+    right: 0,
+    height: 180,
+    backgroundColor: 'rgba(155, 140, 255, 0.13)',
+    top: -70,
   },
   glowB: {
     position: 'absolute',
-    width: 440,
-    height: 440,
-    borderRadius: 220,
-    backgroundColor: 'rgba(111, 232, 197, 0.10)',
-    bottom: -80,
-    left: -120
+    left: 0,
+    right: 0,
+    height: 150,
+    backgroundColor: 'rgba(125, 216, 255, 0.08)',
+    bottom: -60,
   },
   monitorShell: {
     flex: 1,
@@ -1616,9 +1625,9 @@ const styles = StyleSheet.create({
   shell: {
     flex: 1,
     flexDirection: 'row',
-    padding: spacing.xl,
-    gap: spacing.lg,
-    backgroundColor: 'rgba(6, 10, 16, 0.96)'
+    padding: spacing.lg,
+    gap: spacing.md,
+    backgroundColor: 'rgba(5, 7, 13, 0.94)'
   },
   shellCompact: {
     flexDirection: 'column',
@@ -1627,10 +1636,10 @@ const styles = StyleSheet.create({
   },
   sidebarLayer: {
     position: 'absolute',
-    left: spacing.xl,
-    right: spacing.xl,
-    top: spacing.xl,
-    bottom: spacing.xl,
+    left: spacing.lg,
+    right: spacing.lg,
+    top: spacing.lg,
+    bottom: spacing.lg,
     zIndex: 30,
     overflow: 'visible',
   },
@@ -1642,10 +1651,10 @@ const styles = StyleSheet.create({
   },
   contentScrollDesktop: {
     position: 'absolute',
-    left: spacing.xl + 220 + spacing.lg,
-    right: spacing.xl,
-    top: spacing.xl,
-    bottom: spacing.xl,
+    left: spacing.lg + 204 + spacing.md,
+    right: spacing.lg,
+    top: spacing.lg,
+    bottom: spacing.lg,
   },
   content: {
     flexGrow: 1,
@@ -1660,6 +1669,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
+    paddingHorizontal: 2,
   },
   mobileTopCopy: {
     flex: 1,
@@ -1671,23 +1681,23 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   languageButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.panelStrong,
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   languageFlag: {
     fontSize: 18,
   },
   mobileTitle: {
     color: colors.textPrimary,
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '800',
-    letterSpacing: 1.4,
+    letterSpacing: 0,
   },
   mobileMeta: {
     color: colors.textSecondary,
@@ -1695,12 +1705,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#8A7CFF',
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: {width: 0, height: 8},
   },
   addButtonText: {
     color: colors.textPrimary,
@@ -1712,7 +1726,7 @@ const styles = StyleSheet.create({
     opacity: 0.82,
   },
   heroRow: {
-    minHeight: 280
+    minHeight: 0
   },
   heroRowCompact: {
     minHeight: 0,
@@ -1741,14 +1755,15 @@ const styles = StyleSheet.create({
   eyebrow: {
     color: colors.accent,
     textTransform: 'uppercase',
-    letterSpacing: 1.4,
-    fontSize: 11,
-    fontWeight: '700'
+    letterSpacing: 0.8,
+    fontSize: 10,
+    fontWeight: '800'
   },
   heroTitle: {
     color: colors.textPrimary,
-    fontSize: 52,
-    fontWeight: '800'
+    fontSize: 42,
+    lineHeight: 48,
+    fontWeight: '900'
   },
   heroTitleRow: {
     flexDirection: 'row',
@@ -1760,7 +1775,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   heroTitleCompact: {
-    fontSize: 34,
+    fontSize: 30,
+    lineHeight: 36,
   },
   exitFlag: {
     fontSize: 36,
@@ -1772,18 +1788,19 @@ const styles = StyleSheet.create({
   },
   heroSubtitle: {
     color: colors.textSecondary,
-    fontSize: 16
+    fontSize: 14,
+    lineHeight: 20,
   },
   heroSubtitleCompact: {
     fontSize: 14,
   },
   heroPingCard: {
-    minWidth: 220,
+    minWidth: 190,
     padding: spacing.md,
     borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(229,232,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     alignItems: 'flex-end',
   },
   heroPingCardCompact: {
@@ -1795,8 +1812,9 @@ const styles = StyleSheet.create({
   },
   heroPingValue: {
     marginTop: spacing.xs,
-    fontSize: 28,
-    fontWeight: '800',
+    fontSize: 25,
+    lineHeight: 30,
+    fontWeight: '900',
   },
   heroPingMeta: {
     marginTop: spacing.xs,
@@ -1828,9 +1846,9 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: colors.accent,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: radii.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
@@ -1852,9 +1870,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panelStrong,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: radii.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
@@ -1872,9 +1890,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panelStrong,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
@@ -1890,9 +1908,9 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.textSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 1.2,
+    letterSpacing: 0.8,
     fontSize: 11,
-    fontWeight: '700'
+    fontWeight: '800'
   },
   sectionTitleToggleRow: {
     flexDirection: 'row',
@@ -1907,7 +1925,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panelStrong,
@@ -1917,8 +1935,8 @@ const styles = StyleSheet.create({
     minHeight: 42,
   },
   routingModeToggleActive: {
-    borderColor: 'rgba(57,217,138,0.48)',
-    backgroundColor: 'rgba(57,217,138,0.13)',
+    borderColor: 'rgba(99,246,168,0.48)',
+    backgroundColor: 'rgba(99,246,168,0.13)',
   },
   routingModeLabel: {
     color: colors.textSecondary,
@@ -1940,7 +1958,8 @@ const styles = StyleSheet.create({
   },
   sectionLead: {
     color: colors.textPrimary,
-    fontSize: 24,
+    fontSize: 18,
+    lineHeight: 25,
     fontWeight: '700',
     marginTop: spacing.sm
   },
@@ -1951,7 +1970,7 @@ const styles = StyleSheet.create({
   },
   input: {
     marginTop: spacing.md,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -1962,7 +1981,7 @@ const styles = StyleSheet.create({
   },
   appSearchInput: {
     marginTop: spacing.md,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -1978,8 +1997,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   ruleList: {
-    marginTop: spacing.lg,
-    gap: spacing.md
+    marginTop: spacing.md,
+    gap: spacing.sm
   },
   ruleRow: {
     flexDirection: 'row',
@@ -2004,15 +2023,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radii.md,
+    paddingVertical: spacing.sm,
+    minHeight: 64,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.03)'
+    backgroundColor: 'rgba(255,255,255,0.055)'
   },
   profileRowActive: {
-    borderColor: 'rgba(111, 232, 197, 0.40)',
-    backgroundColor: 'rgba(111, 232, 197, 0.08)'
+    borderColor: 'rgba(155, 140, 255, 0.48)',
+    backgroundColor: 'rgba(155, 140, 255, 0.12)'
   },
   profileMeta: {
     flex: 1,
@@ -2032,7 +2052,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
   },
   savedConfigsList: {
-    marginTop: spacing.xl + spacing.xs,
+    marginTop: spacing.xl,
   },
   savedConfigsAddOverlay: {
     position: 'absolute',
@@ -2043,6 +2063,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 45,
+    shadowColor: '#8A7CFF',
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    shadowOffset: {width: 0, height: 10},
   },
   profileActionRow: {
     marginTop: spacing.lg,
@@ -2070,7 +2094,7 @@ const styles = StyleSheet.create({
   },
   proxyAddress: {
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     lineHeight: 22,
     marginTop: spacing.sm,
@@ -2131,12 +2155,15 @@ const styles = StyleSheet.create({
   },
   ruleTitle: {
     color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '600'
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700'
   },
   ruleMeta: {
     color: colors.textSecondary,
-    marginTop: 4
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
   },
   errorText: {
     color: colors.warning,
@@ -2153,10 +2180,10 @@ const styles = StyleSheet.create({
   contextMenu: {
     position: 'absolute',
     width: 220,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: 'rgba(8, 15, 24, 0.98)',
+    backgroundColor: 'rgba(12, 13, 26, 0.98)',
     overflow: 'hidden'
   },
   contextMenuItem: {
@@ -2204,21 +2231,22 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.56)',
   },
   modalCard: {
     width: '100%',
     maxWidth: 520,
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: 'rgba(8, 15, 24, 0.98)',
+    backgroundColor: 'rgba(12, 13, 26, 0.98)',
     padding: spacing.lg,
   },
   modalTitle: {
     color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '900',
   },
   modalActions: {
     marginTop: spacing.lg,
@@ -2241,7 +2269,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panelStrong,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 46,
@@ -2249,7 +2277,7 @@ const styles = StyleSheet.create({
   importIconButton: {
     width: 48,
     height: 46,
-    borderRadius: radii.md,
+    borderRadius: 23,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panelStrong,
@@ -2266,7 +2294,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
@@ -2280,7 +2308,7 @@ const styles = StyleSheet.create({
   protocolButton: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panelStrong,
@@ -2304,41 +2332,91 @@ const styles = StyleSheet.create({
   },
   fixedActionBar: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.sm,
-    padding: spacing.sm,
-    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 38,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: 'rgba(8, 15, 24, 0.96)',
+    borderColor: 'rgba(229,232,255,0.24)',
+    backgroundColor: 'rgba(13, 14, 30, 0.90)',
     flexShrink: 0,
+    minHeight: 78,
+    shadowColor: '#6F5BFF',
+    shadowOpacity: 0.34,
+    shadowRadius: 28,
+    shadowOffset: {width: 0, height: 12},
   },
   fixedConnectButton: {
-    flex: 1,
-    minHeight: 50,
-    borderRadius: radii.md,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.34)',
+    shadowColor: '#8A7CFF',
+    shadowOpacity: 0.38,
+    shadowRadius: 22,
+    shadowOffset: {width: 0, height: 8},
   },
   fixedPingButton: {
     flex: 1,
-    minHeight: 50,
-    borderRadius: radii.md,
+    minHeight: 54,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panelStrong,
+    borderColor: 'rgba(229,232,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
   },
+  fixedLocationButton: {
+    flex: 1,
+    minHeight: 54,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(229,232,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  fixedLocationFlag: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '900',
+    includeFontPadding: false,
+  },
+  fixedLocationText: {
+    color: colors.textSecondary,
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800',
+  },
+  fixedConnectIconImage: {
+    width: 42,
+    height: 42,
+    tintColor: '#FFFFFF',
+  },
   fixedPingText: {
     color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '800',
-    lineHeight: 22,
+    fontSize: 20,
+    fontWeight: '900',
+    lineHeight: 24,
     includeFontPadding: false,
     textAlign: 'center',
     textAlignVertical: 'center',
+  },
+  fixedPingMeta: {
+    color: colors.textSecondary,
+    marginTop: 1,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '800',
   },
   centerText: {
     textAlign: 'center',

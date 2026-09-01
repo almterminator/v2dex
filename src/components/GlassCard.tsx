@@ -11,8 +11,8 @@ type GlassCardProps = PropsWithChildren<{
 export function GlassCard({children, style, innerStyle}: GlassCardProps) {
   const panelColors =
     Platform.OS === 'macos'
-      ? ['rgba(12, 19, 28, 0.94)', 'rgba(12, 19, 28, 0.94)']
-      : ['rgba(255,255,255,0.14)', 'rgba(255,255,255,0.04)'];
+      ? ['rgba(15, 17, 30, 0.92)', 'rgba(15, 17, 30, 0.92)']
+      : ['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.055)'];
 
   return (
     <AppGradient
@@ -30,10 +30,15 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    overflow: 'hidden'
+    overflow: 'hidden',
+    shadowColor: '#7464FF',
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    shadowOffset: {width: 0, height: 12},
+    elevation: 8,
   },
   inner: {
-    backgroundColor: Platform.OS === 'macos' ? 'rgba(8, 14, 22, 0.98)' : colors.panel,
-    padding: 18
+    backgroundColor: Platform.OS === 'macos' ? 'rgba(10, 12, 22, 0.90)' : colors.panel,
+    padding: 18,
   }
 });

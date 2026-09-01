@@ -14,12 +14,12 @@ struct DashboardView: View {
             backgroundGlow
 
             appShell
-                .padding(.horizontal, 8)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
 
             controlDock
-                .padding(.horizontal, 22)
-                .padding(.bottom, 20)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
         }
         .sheet(isPresented: $showingImportPopup) {
             importSheet
@@ -36,64 +36,62 @@ struct DashboardView: View {
             LinearGradient(
                 colors: [
                     Theme.background,
-                    Theme.navy.opacity(0.58),
+                    Theme.navy.opacity(0.46),
                     Theme.background
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            RadialGradient(colors: [Theme.purple.opacity(0.34), .clear], center: .bottom, startRadius: 60, endRadius: 460)
-            RadialGradient(colors: [Theme.cyan.opacity(0.12), .clear], center: .topTrailing, startRadius: 24, endRadius: 360)
+            LinearGradient(
+                colors: [.clear, Theme.purple.opacity(0.20), Theme.cyan.opacity(0.08), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            RadialGradient(colors: [Theme.violet.opacity(0.22), .clear], center: .bottomTrailing, startRadius: 120, endRadius: 520)
         }
         .ignoresSafeArea()
     }
 
     private var appShell: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             trafficLights
-                .padding(.top, 24)
+                .padding(.top, 22)
                 .padding(.leading, 28)
 
             topBar
                 .padding(.horizontal, 28)
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 26) {
+                VStack(alignment: .leading, spacing: 20) {
                     savedConfigsPanel
                     subscriptionsSection
                 }
                 .padding(.horizontal, 28)
-                .padding(.bottom, 158)
+                .padding(.bottom, 144)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Theme.shellTop.opacity(0.98),
-                            Theme.shellMid.opacity(0.97),
-                            Theme.background.opacity(0.99)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            ZStack {
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(Theme.shellGradient)
+            }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Theme.shellStroke, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .stroke(Theme.shellStroke, lineWidth: 1.5)
         )
         .overlay(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
                 .stroke(Theme.purple.opacity(0.55), lineWidth: 1)
-                .blur(radius: 3)
+                .blur(radius: 2.4)
                 .offset(x: -2, y: 1)
                 .allowsHitTesting(false)
         }
-        .shadow(color: Theme.purple.opacity(0.34), radius: 34, x: 0, y: 0)
-        .shadow(color: .black.opacity(0.48), radius: 38, x: 0, y: 24)
+        .shadow(color: Theme.purple.opacity(0.24), radius: 28, x: 0, y: 0)
+        .shadow(color: .black.opacity(0.44), radius: 34, x: 0, y: 22)
     }
 
     private var trafficLights: some View {
@@ -109,14 +107,14 @@ struct DashboardView: View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(store.activeProfile?.title ?? "No config selected")
-                    .font(.system(size: 32, weight: .black, design: .rounded))
+                    .font(.system(size: 29, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.48)
                     .shadow(color: .black.opacity(0.28), radius: 5, x: 0, y: 4)
 
                 Text(store.statusLine)
-                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    .font(.system(size: 14, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white.opacity(0.58))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -124,10 +122,10 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 12) {
-                orbButton(icon: "globe", size: 58, iconSize: 25, help: "Connection") {
+                orbButton(icon: "globe", size: 50, iconSize: 22, help: "Connection") {
                     showingProxyPopup = true
                 }
-                orbButton(icon: "plus", size: 58, iconSize: 31, help: "Import config") {
+                orbButton(icon: "plus", size: 50, iconSize: 27, help: "Import config") {
                     showingImportPopup = true
                 }
             }
@@ -181,7 +179,7 @@ struct DashboardView: View {
     }
 
     private var emptyProfiles: some View {
-        liquidCard(height: 88) {
+        liquidCard(height: 78) {
             VStack(spacing: 12) {
                 Image(systemName: "tray")
                     .font(.system(size: 34, weight: .black))
@@ -260,25 +258,25 @@ struct DashboardView: View {
             HStack(spacing: 14) {
                 Button(action: onToggle) {
                     Image(systemName: collapsed ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 20, weight: .black))
+                        .font(.system(size: 17, weight: .black))
                         .foregroundStyle(.white)
-                        .frame(width: 32, height: 44)
+                        .frame(width: 30, height: 40)
                 }
                 .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 10) {
                         Text(title)
-                            .font(.system(size: subtitle == nil ? 24 : 23, weight: .black, design: .rounded))
+                            .font(.system(size: subtitle == nil ? 22 : 21, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.58)
 
                         if let count {
                             Text("\(count)")
-                                .font(.system(size: 16, weight: .black, design: .rounded))
+                                .font(.system(size: 15, weight: .black, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.90))
-                                .frame(minWidth: 34, minHeight: 34)
+                                .frame(minWidth: 32, minHeight: 32)
                                 .background(
                                     Circle()
                                         .fill(Theme.purple.opacity(0.34))
@@ -297,18 +295,18 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 10) {
-                    orbButton(icon: primaryIcon, size: 48, iconSize: 18, loading: primaryLoading, help: "Ping") {
+                    orbButton(icon: primaryIcon, size: 42, iconSize: 16, loading: primaryLoading, help: "Ping") {
                         onPrimary()
                     }
 
                     if let secondaryIcon, let onSecondary {
-                        orbButton(icon: secondaryIcon, size: 48, iconSize: 20, loading: secondaryLoading, help: "Update") {
+                        orbButton(icon: secondaryIcon, size: 42, iconSize: 18, loading: secondaryLoading, help: "Update") {
                             onSecondary()
                         }
                     }
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 18)
         }
     }
 
@@ -316,13 +314,13 @@ struct DashboardView: View {
         Button {
             store.selectProfile(profile)
         } label: {
-            liquidCard(height: 74, selected: profile.id == store.activeProfile?.id) {
+            liquidCard(height: 66, selected: profile.id == store.activeProfile?.id) {
                 HStack(spacing: 12) {
                     profileFlag(for: profile)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(profile.title)
-                            .font(.system(size: 17, weight: .black, design: .rounded))
+                            .font(.system(size: 16, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.62)
@@ -332,7 +330,7 @@ struct DashboardView: View {
                             .lineLimit(1)
                     }
 
-                    Spacer(minLength: 14)
+                    Spacer(minLength: 12)
 
                     pingBadge(for: profile)
                 }
@@ -361,15 +359,15 @@ struct DashboardView: View {
     private func profileFlag(for profile: ProfileSummary) -> some View {
         if let countryCode = store.profileCountryCodes[profile.id] {
             Text(flagEmoji(countryCode))
-                .font(.system(size: 34, weight: .black))
-                .frame(width: 42, height: 44)
+                .font(.system(size: 31, weight: .black))
+                .frame(width: 40, height: 42)
                 .accessibilityLabel(Text(countryCode))
         } else {
             Image(systemName: "globe")
-                .font(.system(size: 28, weight: .semibold))
+                .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(Theme.accentGradient(store))
                 .symbolVariant(.none)
-                .frame(width: 42, height: 44)
+                .frame(width: 40, height: 42)
         }
     }
 
@@ -411,13 +409,13 @@ struct DashboardView: View {
                 Spacer()
                 pingControl
             }
-            .padding(.horizontal, 30)
-            .padding(.top, 24)
+            .padding(.horizontal, 28)
+            .padding(.top, 20)
 
             powerControl
-                .offset(y: -16)
+                .offset(y: -20)
         }
-        .frame(height: 132)
+        .frame(height: 118)
     }
 
     private var dockTray: some View {
@@ -433,17 +431,17 @@ struct DashboardView: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(Theme.accentGradient(store), lineWidth: 3))
+            .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(Theme.accentGradient(store), lineWidth: 2.4))
             .overlay(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 44, style: .continuous)
                     .stroke(Color.white.opacity(0.58), lineWidth: 1)
                     .blur(radius: 1.4)
                     .padding(3)
             }
-            .shadow(color: Theme.currentAccent(store).opacity(0.46), radius: 26, x: 0, y: 0)
-            .shadow(color: .black.opacity(0.55), radius: 26, x: 0, y: 18)
-            .frame(height: 86)
-            .padding(.top, 24)
+            .shadow(color: Theme.currentAccent(store).opacity(0.38), radius: 22, x: 0, y: 0)
+            .shadow(color: .black.opacity(0.50), radius: 22, x: 0, y: 16)
+            .frame(height: 78)
+            .padding(.top, 20)
     }
 
     private var routerOrFlagDockControl: some View {
@@ -498,7 +496,7 @@ struct DashboardView: View {
 
                 Circle()
                     .fill(store.routerSocksModeEnabled ? AnyShapeStyle(Theme.accentGradient(store)) : AnyShapeStyle(LinearGradient(colors: [.white.opacity(0.92), Theme.panel.opacity(0.78)], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                    .frame(width: 42, height: 42)
+                    .frame(width: 38, height: 38)
                     .overlay(
                         Image(systemName: "globe")
                             .font(.system(size: 18, weight: .black))
@@ -508,7 +506,7 @@ struct DashboardView: View {
                     .shadow(color: Theme.purple.opacity(0.58), radius: 18, x: 0, y: 0)
                     .padding(5)
             }
-            .frame(width: 108, height: 54)
+            .frame(width: 102, height: 50)
         }
         .buttonStyle(.plain)
         .help("Router SOCKS")
@@ -521,10 +519,10 @@ struct DashboardView: View {
             ZStack {
                 Circle()
                     .fill(Theme.powerGradient(store))
-                    .overlay(Circle().stroke(Color.white.opacity(0.66), lineWidth: 2))
-                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 4).blur(radius: 1.0))
-                    .shadow(color: Theme.currentAccent(store).opacity(0.74), radius: 22, x: 0, y: 0)
-                    .shadow(color: .black.opacity(0.46), radius: 16, x: 0, y: 10)
+                    .overlay(Circle().stroke(Color.white.opacity(0.62), lineWidth: 1.8))
+                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 3.2).blur(radius: 0.8))
+                    .shadow(color: Theme.currentAccent(store).opacity(0.64), radius: 20, x: 0, y: 0)
+                    .shadow(color: .black.opacity(0.46), radius: 14, x: 0, y: 9)
 
                 if store.tunnel.connecting {
                     ProgressView()
@@ -532,11 +530,11 @@ struct DashboardView: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "power")
-                        .font(.system(size: 44, weight: .black))
+                        .font(.system(size: 39, weight: .black))
                         .foregroundStyle(.white)
                 }
             }
-            .frame(width: 98, height: 98)
+            .frame(width: 88, height: 88)
         }
         .buttonStyle(.plain)
         .help(store.tunnel.connected ? "Disconnect" : "Connect")
@@ -553,11 +551,11 @@ struct DashboardView: View {
                         .tint(Theme.currentAccent(store))
                 } else {
                     Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 28, weight: .black))
+                        .font(.system(size: 25, weight: .black))
                         .foregroundStyle(Theme.currentAccent(store))
                 }
                 Text(store.lastPingMs.map { "\($0)" } ?? "--")
-                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .font(.system(size: 22, weight: .black, design: .rounded))
                     .foregroundStyle(store.lastPingMs.map(pingColor) ?? Theme.currentAccent(store))
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
@@ -568,7 +566,7 @@ struct DashboardView: View {
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 132, alignment: .trailing)
+        .frame(width: 138, alignment: .trailing)
         .help("Ping")
     }
 
@@ -697,15 +695,15 @@ struct DashboardView: View {
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.32), Theme.purple.opacity(0.34), Theme.panel.opacity(0.82)],
+                            colors: [Color.white.opacity(0.28), Theme.violet.opacity(0.30), Theme.panel.opacity(0.84)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .overlay(Circle().stroke(Color.white.opacity(0.62), lineWidth: 2))
-                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 3).blur(radius: 0.8))
-                    .shadow(color: Theme.purple.opacity(0.68), radius: 18, x: 0, y: 0)
-                    .shadow(color: .black.opacity(0.38), radius: 10, x: 0, y: 8)
+                    .overlay(Circle().stroke(Color.white.opacity(0.54), lineWidth: 1.6))
+                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 2.2).blur(radius: 0.7))
+                    .shadow(color: Theme.currentAccent(store).opacity(0.42), radius: 14, x: 0, y: 0)
+                    .shadow(color: .black.opacity(0.34), radius: 9, x: 0, y: 7)
 
                 if loading {
                     ProgressView()
@@ -726,18 +724,20 @@ struct DashboardView: View {
     private func liquidCard<Content: View>(height: CGFloat, selected: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.thinMaterial)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(selected ? 0.18 : 0.13),
-                            Theme.panel.opacity(0.90),
-                            Theme.purple.opacity(selected ? 0.22 : 0.12)
+                            Color.white.opacity(selected ? 0.16 : 0.10),
+                            Theme.panel.opacity(0.82),
+                            Theme.purple.opacity(selected ? 0.18 : 0.09)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(selected ? Theme.accentGradient(store) : Theme.cardStroke, lineWidth: selected ? 2.5 : 1.6))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(selected ? Theme.accentGradient(store) : Theme.cardStroke, lineWidth: selected ? 2.2 : 1.2))
                 .overlay(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
@@ -751,8 +751,8 @@ struct DashboardView: View {
                         .blur(radius: 1.2)
                         .opacity(0.48)
                 }
-                .shadow(color: Theme.purple.opacity(selected ? 0.42 : 0.24), radius: selected ? 16 : 10, x: 0, y: 0)
-                .shadow(color: .black.opacity(0.34), radius: 14, x: 0, y: 8)
+                .shadow(color: Theme.currentAccent(store).opacity(selected ? 0.34 : 0.16), radius: selected ? 14 : 8, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.30), radius: 12, x: 0, y: 7)
 
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -782,19 +782,28 @@ struct DashboardView: View {
 }
 
 private enum Theme {
-    static let background = Color(red: 0.015, green: 0.018, blue: 0.040)
-    static let panel = Color(red: 0.035, green: 0.045, blue: 0.090)
-    static let shellTop = Color(red: 0.040, green: 0.055, blue: 0.120)
-    static let shellMid = Color(red: 0.026, green: 0.034, blue: 0.075)
-    static let navy = Color(red: 0.10, green: 0.14, blue: 0.34)
-    static let purple = Color(red: 0.45, green: 0.25, blue: 0.92)
-    static let violet = Color(red: 0.64, green: 0.45, blue: 1.00)
-    static let orange = Color(red: 1.00, green: 0.55, blue: 0.20)
-    static let cyan = Color(red: 0.35, green: 0.90, blue: 0.96)
-    static let green = Color(red: 0.44, green: 0.94, blue: 0.60)
-    static let red = Color(red: 1.00, green: 0.32, blue: 0.32)
-    static let shellStroke = LinearGradient(colors: [Color.white.opacity(0.48), violet.opacity(0.78), purple.opacity(0.44)], startPoint: .topLeading, endPoint: .bottomTrailing)
-    static let cardStroke = LinearGradient(colors: [Color.white.opacity(0.62), violet.opacity(0.74), purple.opacity(0.90)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let background = Color(red: 0.012, green: 0.014, blue: 0.030)
+    static let panel = Color(red: 0.034, green: 0.038, blue: 0.082)
+    static let shellTop = Color(red: 0.046, green: 0.052, blue: 0.118)
+    static let shellMid = Color(red: 0.024, green: 0.030, blue: 0.068)
+    static let navy = Color(red: 0.085, green: 0.105, blue: 0.260)
+    static let purple = Color(red: 0.37, green: 0.20, blue: 0.84)
+    static let violet = Color(red: 0.60, green: 0.52, blue: 1.00)
+    static let orange = Color(red: 1.00, green: 0.58, blue: 0.24)
+    static let cyan = Color(red: 0.44, green: 0.84, blue: 1.00)
+    static let green = Color(red: 0.39, green: 0.96, blue: 0.66)
+    static let red = Color(red: 1.00, green: 0.34, blue: 0.42)
+    static let shellGradient = LinearGradient(
+        colors: [
+            shellTop.opacity(0.82),
+            shellMid.opacity(0.86),
+            background.opacity(0.94)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let shellStroke = LinearGradient(colors: [Color.white.opacity(0.40), violet.opacity(0.70), purple.opacity(0.36)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let cardStroke = LinearGradient(colors: [Color.white.opacity(0.42), violet.opacity(0.56), purple.opacity(0.62)], startPoint: .topLeading, endPoint: .bottomTrailing)
 
     @MainActor
     static func currentAccent(_ store: AppStore) -> Color {

@@ -24,8 +24,8 @@ export function Sidebar({
   onToggleLanguage,
 }: SidebarProps) {
   const tunnel = useAppStore(state => state.tunnel);
-  const statusColor = tunnel.connecting ? colors.danger : tunnel.connected ? colors.success : colors.info;
-  const statusTint = withAlpha(statusColor, 0.16);
+  const statusColor = tunnel.connecting ? colors.warning : tunnel.connected ? colors.success : colors.info;
+  const statusTint = withAlpha(statusColor, 0.18);
   const isPersian = language === 'fa';
   const supportsSidebarImport = Platform.OS === 'windows';
 
@@ -100,15 +100,20 @@ export function Sidebar({
 
 const styles = StyleSheet.create({
   container: {
-    width: 220,
-    padding: spacing.lg,
+    width: 204,
+    padding: spacing.md,
     borderRadius: radii.xl,
-    backgroundColor: Platform.OS === 'macos' ? 'rgba(7, 12, 19, 0.96)' : 'rgba(5, 12, 19, 0.52)',
-    borderColor: colors.border,
+    backgroundColor: Platform.OS === 'macos' ? 'rgba(12, 13, 26, 0.82)' : 'rgba(12, 13, 26, 0.58)',
+    borderColor: 'rgba(229,232,255,0.20)',
     borderWidth: 1,
     minHeight: '100%',
     position: 'relative',
     zIndex: 20,
+    shadowColor: '#6F5BFF',
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
+    shadowOffset: {width: 0, height: 16},
+    elevation: 10,
   },
   brandRow: {
     flexDirection: 'row',
@@ -116,14 +121,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   languageButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panelStrong,
+    borderColor: 'rgba(255,255,255,0.20)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   languageFlag: {
     fontSize: 19,
@@ -136,14 +141,16 @@ const styles = StyleSheet.create({
   },
   brand: {
     color: colors.textPrimary,
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '800',
-    letterSpacing: 2.2
+    letterSpacing: 0,
   },
   caption: {
     color: colors.textSecondary,
-    marginTop: 8,
-    marginBottom: spacing.xl
+    marginTop: 7,
+    marginBottom: spacing.xl,
+    fontSize: 12,
+    lineHeight: 16,
   },
   nav: {
     gap: spacing.sm
@@ -154,10 +161,10 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   addConfigButton: {
-    minHeight: 46,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    borderRadius: radii.md,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: 'center',
   },
@@ -168,9 +175,9 @@ const styles = StyleSheet.create({
   },
   navItem: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    borderRadius: radii.md,
-    minHeight: 46,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    minHeight: 42,
     justifyContent: 'center',
   },
   navItemCompact: {
@@ -179,12 +186,12 @@ const styles = StyleSheet.create({
     minHeight: 38,
   },
   navItemActive: {
-    backgroundColor: 'rgba(111, 232, 197, 0.16)'
+    backgroundColor: 'rgba(155, 140, 255, 0.18)'
   },
   navText: {
     color: colors.textSecondary,
-    fontSize: 15,
-    fontWeight: '600'
+    fontSize: 14,
+    fontWeight: '700'
   },
   addConfigText: {
     color: colors.textPrimary,
