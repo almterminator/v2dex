@@ -76,17 +76,6 @@ struct DashboardView: View {
                     .fill(Theme.shellGradient)
             }
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .stroke(Theme.shellStroke, lineWidth: 1.5)
-        )
-        .overlay(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .stroke(Theme.purple.opacity(0.55), lineWidth: 1)
-                .blur(radius: 2.4)
-                .offset(x: -2, y: 1)
-                .allowsHitTesting(false)
-        }
         .shadow(color: Theme.purple.opacity(0.24), radius: 28, x: 0, y: 0)
         .shadow(color: .black.opacity(0.44), radius: 34, x: 0, y: 22)
     }
@@ -118,11 +107,11 @@ struct DashboardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 12) {
-                orbButton(icon: "globe", size: 50, iconSize: 22, help: "Connection") {
+            HStack(spacing: 9) {
+                orbButton(icon: "globe", size: 42, iconSize: 18, help: "Connection") {
                     showingProxyPopup = true
                 }
-                orbButton(icon: "plus", size: 50, iconSize: 27, help: "Import config") {
+                orbButton(icon: "plus", size: 42, iconSize: 23, help: "Import config") {
                     showingImportPopup = true
                 }
             }
@@ -135,10 +124,6 @@ struct DashboardView: View {
                 .fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .fill(Theme.headerGlass)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(Theme.shellStroke, lineWidth: 1.15)
         }
         .overlay(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
@@ -432,7 +417,6 @@ struct DashboardView: View {
             Circle()
                 .fill(.ultraThinMaterial)
                 .overlay(Circle().fill(Theme.dockButtonWell))
-                .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 2.2))
                 .shadow(color: Theme.currentAccent(store).opacity(0.34), radius: 24, x: 0, y: 0)
                 .shadow(color: .black.opacity(0.42), radius: 16, x: 0, y: 12)
                 .frame(width: 108, height: 108)
@@ -456,12 +440,13 @@ struct DashboardView: View {
         RoundedRectangle(cornerRadius: 44, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).fill(Theme.dockGlass))
-            .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(Theme.accentGradient(store), lineWidth: 2.4))
             .overlay(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 44, style: .continuous)
-                    .stroke(Color.white.opacity(0.66), lineWidth: 1)
-                    .blur(radius: 1.4)
-                    .padding(3)
+                    .fill(Color.white.opacity(0.10))
+                    .frame(height: 1)
+                    .blur(radius: 1)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 5)
             }
             .shadow(color: Theme.currentAccent(store).opacity(0.38), radius: 22, x: 0, y: 0)
             .shadow(color: .black.opacity(0.50), radius: 22, x: 0, y: 16)
@@ -516,22 +501,20 @@ struct DashboardView: View {
                             endPoint: .trailing
                         )
                     )
-                    .overlay(Capsule().stroke(Theme.violet.opacity(0.86), lineWidth: 2))
                     .shadow(color: store.routerSocksModeEnabled ? Theme.currentAccent(store).opacity(0.42) : .black.opacity(0.24), radius: 14, x: 0, y: 0)
 
                 Circle()
                     .fill(store.routerSocksModeEnabled ? AnyShapeStyle(Theme.accentGradient(store)) : AnyShapeStyle(LinearGradient(colors: [.white.opacity(0.92), Theme.panel.opacity(0.78)], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                    .frame(width: 38, height: 38)
+                    .frame(width: 32, height: 32)
                     .overlay(
                         Image(systemName: "globe")
-                            .font(.system(size: 18, weight: .black))
+                            .font(.system(size: 15, weight: .black))
                             .foregroundStyle(.white)
                     )
-                    .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 2))
                     .shadow(color: Theme.purple.opacity(0.58), radius: 18, x: 0, y: 0)
-                    .padding(5)
+                    .padding(4)
             }
-            .frame(width: 102, height: 50)
+            .frame(width: 82, height: 42)
         }
         .buttonStyle(.plain)
         .help("Router SOCKS")
@@ -544,8 +527,6 @@ struct DashboardView: View {
             ZStack {
                 Circle()
                     .fill(Theme.powerGradient(store))
-                    .overlay(Circle().stroke(Color.white.opacity(0.62), lineWidth: 1.8))
-                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 3.2).blur(radius: 0.8))
                     .shadow(color: Theme.currentAccent(store).opacity(0.64), radius: 20, x: 0, y: 0)
                     .shadow(color: .black.opacity(0.46), radius: 14, x: 0, y: 9)
 
@@ -725,8 +706,6 @@ struct DashboardView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .overlay(Circle().stroke(Color.white.opacity(0.54), lineWidth: 1.6))
-                    .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 2.2).blur(radius: 0.7))
                     .shadow(color: Theme.currentAccent(store).opacity(0.42), radius: 14, x: 0, y: 0)
                     .shadow(color: .black.opacity(0.34), radius: 9, x: 0, y: 7)
 
@@ -763,7 +742,6 @@ struct DashboardView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(selected ? Theme.accentGradient(store) : Theme.cardStroke, lineWidth: selected ? 2.2 : 1.2))
                 .overlay(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
