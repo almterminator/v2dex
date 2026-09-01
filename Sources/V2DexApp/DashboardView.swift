@@ -36,18 +36,18 @@ struct DashboardView: View {
             LinearGradient(
                 colors: [
                     Theme.background,
-                    Theme.navy.opacity(0.46),
+                    Theme.navy.opacity(0.34),
                     Theme.background
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             LinearGradient(
-                colors: [.clear, Theme.purple.opacity(0.20), Theme.cyan.opacity(0.08), .clear],
+                colors: [.clear, Theme.purple.opacity(0.13), Theme.cyan.opacity(0.06), .clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            RadialGradient(colors: [Theme.violet.opacity(0.22), .clear], center: .bottomTrailing, startRadius: 120, endRadius: 520)
+            RadialGradient(colors: [Theme.violet.opacity(0.16), .clear], center: .bottomTrailing, startRadius: 120, endRadius: 520)
         }
         .ignoresSafeArea()
     }
@@ -76,7 +76,7 @@ struct DashboardView: View {
                     .fill(Theme.shellGradient)
             }
         )
-        .shadow(color: Theme.purple.opacity(0.18), radius: 26, x: 0, y: 0)
+        .shadow(color: Theme.purple.opacity(0.12), radius: 26, x: 0, y: 0)
         .shadow(color: .black.opacity(0.40), radius: 30, x: 0, y: 20)
     }
 
@@ -241,59 +241,56 @@ struct DashboardView: View {
         onPrimary: @escaping () -> Void,
         onSecondary: (() -> Void)?
     ) -> some View {
-        liquidCard(height: 74) {
-            HStack(spacing: 14) {
-                Button(action: onToggle) {
-                    Image(systemName: collapsed ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 15, weight: .black))
+        HStack(spacing: 12) {
+            Button(action: onToggle) {
+                Image(systemName: collapsed ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .frame(width: 28, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 9) {
+                    Text(title)
+                        .font(.system(size: subtitle == nil ? 21 : 20, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
-                        .frame(width: 28, height: 34)
-                }
-                .buttonStyle(.plain)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.58)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 10) {
-                        Text(title)
-                            .font(.system(size: subtitle == nil ? 20 : 19, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.58)
-
-                        if let count {
-                            Text("\(count)")
-                                .font(.system(size: 15, weight: .black, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.90))
-                                .frame(minWidth: 28, minHeight: 28)
-                                .background(
-                                    Circle()
-                                        .fill(Theme.purple.opacity(0.34))
-                                )
-                        }
-                    }
-
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 14, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.58))
-                            .lineLimit(1)
+                    if let count {
+                        Text("\(count)")
+                            .font(.system(size: 13, weight: .black, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.90))
+                            .frame(minWidth: 26, minHeight: 26)
+                            .background(Circle().fill(Theme.purple.opacity(0.32)))
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 8) {
-                    orbButton(icon: primaryIcon, size: 36, iconSize: 14, loading: primaryLoading, help: "Ping") {
-                        onPrimary()
-                    }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 13, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.54))
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if let secondaryIcon, let onSecondary {
-                        orbButton(icon: secondaryIcon, size: 36, iconSize: 16, loading: secondaryLoading, help: "Update") {
-                            onSecondary()
-                        }
+            HStack(spacing: 8) {
+                orbButton(icon: primaryIcon, size: 34, iconSize: 13, loading: primaryLoading, help: "Ping") {
+                    onPrimary()
+                }
+
+                if let secondaryIcon, let onSecondary {
+                    orbButton(icon: secondaryIcon, size: 34, iconSize: 15, loading: secondaryLoading, help: "Update") {
+                        onSecondary()
                     }
                 }
             }
-            .padding(.horizontal, 16)
         }
+        .padding(.horizontal, 4)
+        .frame(height: 48)
     }
 
     private func profileRow(_ profile: ProfileSummary, allowsEditing: Bool) -> some View {
@@ -726,23 +723,23 @@ struct DashboardView: View {
 
     private func liquidCard<Content: View>(height: CGFloat, selected: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(selected ? 0.18 : 0.10),
-                            Theme.shellTop.opacity(0.54),
-                            Theme.panel.opacity(0.72),
-                            Theme.purple.opacity(selected ? 0.22 : 0.08)
+                            Color.white.opacity(selected ? 0.16 : 0.09),
+                            Theme.shellTop.opacity(0.46),
+                            Theme.panel.opacity(0.68),
+                            Theme.purple.opacity(selected ? 0.17 : 0.05)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .overlay(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [Color.white.opacity(0.32), Color.white.opacity(0.09), .clear],
@@ -755,7 +752,7 @@ struct DashboardView: View {
                         .opacity(0.48)
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(
                             RadialGradient(
                                 colors: [Theme.currentAccent(store).opacity(selected ? 0.20 : 0.10), .clear],
@@ -766,8 +763,8 @@ struct DashboardView: View {
                         )
                         .allowsHitTesting(false)
                 }
-                .shadow(color: Theme.currentAccent(store).opacity(selected ? 0.26 : 0.10), radius: selected ? 12 : 7, x: 0, y: 0)
-                .shadow(color: .black.opacity(0.26), radius: 11, x: 0, y: 7)
+                .shadow(color: Theme.currentAccent(store).opacity(selected ? 0.20 : 0.07), radius: selected ? 11 : 6, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.22), radius: 10, x: 0, y: 6)
 
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
