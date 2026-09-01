@@ -53,13 +53,13 @@ struct DashboardView: View {
     }
 
     private var appShell: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             topBar
                 .padding(.horizontal, 28)
-                .padding(.top, 18)
+                .padding(.top, 24)
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     savedConfigsPanel
                     subscriptionsSection
                 }
@@ -76,8 +76,8 @@ struct DashboardView: View {
                     .fill(Theme.shellGradient)
             }
         )
-        .shadow(color: Theme.purple.opacity(0.24), radius: 28, x: 0, y: 0)
-        .shadow(color: .black.opacity(0.44), radius: 34, x: 0, y: 22)
+        .shadow(color: Theme.purple.opacity(0.18), radius: 26, x: 0, y: 0)
+        .shadow(color: .black.opacity(0.40), radius: 30, x: 0, y: 20)
     }
 
     private var trafficLights: some View {
@@ -93,7 +93,7 @@ struct DashboardView: View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(store.activeProfile?.title ?? "No config selected")
-                    .font(.system(size: 31, weight: .black, design: .rounded))
+                    .font(.system(size: 30, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.44)
@@ -107,11 +107,11 @@ struct DashboardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 9) {
-                headerIconButton(icon: "globe", iconSize: 19, help: "Connection") {
+            HStack(spacing: 8) {
+                headerIconButton(icon: "globe", iconSize: 18, help: "Connection") {
                     showingProxyPopup = true
                 }
-                headerIconButton(icon: "plus", iconSize: 24, help: "Import config") {
+                headerIconButton(icon: "plus", iconSize: 22, help: "Import config") {
                     showingImportPopup = true
                 }
             }
@@ -121,7 +121,7 @@ struct DashboardView: View {
 
     private var savedConfigsPanel: some View {
         let savedProfiles = store.standaloneProfiles
-        return VStack(alignment: .leading, spacing: 18) {
+        return VStack(alignment: .leading, spacing: 14) {
             headerCard(
                 title: "Saved Configs",
                 subtitle: nil,
@@ -180,7 +180,7 @@ struct DashboardView: View {
     }
 
     private func subscriptionCard(_ subscription: SubscriptionSummary) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             headerCard(
                 title: subscription.title,
                 subtitle: "\(subscription.profileIDs.count) configs",
@@ -218,7 +218,7 @@ struct DashboardView: View {
 
             if !store.collapsedSubscriptionIDs.contains(subscription.id) {
                 let profiles = store.profiles.filter { subscription.profileIDs.contains($0.id) }
-                VStack(spacing: 10) {
+                VStack(spacing: 8) {
                     ForEach(profiles) { profile in
                         profileRow(profile, allowsEditing: true)
                     }
@@ -241,20 +241,20 @@ struct DashboardView: View {
         onPrimary: @escaping () -> Void,
         onSecondary: (() -> Void)?
     ) -> some View {
-        liquidCard(height: 88) {
+        liquidCard(height: 74) {
             HStack(spacing: 14) {
                 Button(action: onToggle) {
                     Image(systemName: collapsed ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 17, weight: .black))
+                        .font(.system(size: 15, weight: .black))
                         .foregroundStyle(.white)
-                        .frame(width: 30, height: 40)
+                        .frame(width: 28, height: 34)
                 }
                 .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 10) {
                         Text(title)
-                            .font(.system(size: subtitle == nil ? 22 : 21, weight: .black, design: .rounded))
+                            .font(.system(size: subtitle == nil ? 20 : 19, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.58)
@@ -263,11 +263,10 @@ struct DashboardView: View {
                             Text("\(count)")
                                 .font(.system(size: 15, weight: .black, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.90))
-                                .frame(minWidth: 32, minHeight: 32)
+                                .frame(minWidth: 28, minHeight: 28)
                                 .background(
                                     Circle()
                                         .fill(Theme.purple.opacity(0.34))
-                                        .overlay(Circle().stroke(Theme.violet.opacity(0.55), lineWidth: 1))
                                 )
                         }
                     }
@@ -281,19 +280,19 @@ struct DashboardView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 10) {
-                    orbButton(icon: primaryIcon, size: 42, iconSize: 16, loading: primaryLoading, help: "Ping") {
+                HStack(spacing: 8) {
+                    orbButton(icon: primaryIcon, size: 36, iconSize: 14, loading: primaryLoading, help: "Ping") {
                         onPrimary()
                     }
 
                     if let secondaryIcon, let onSecondary {
-                        orbButton(icon: secondaryIcon, size: 42, iconSize: 18, loading: secondaryLoading, help: "Update") {
+                        orbButton(icon: secondaryIcon, size: 36, iconSize: 16, loading: secondaryLoading, help: "Update") {
                             onSecondary()
                         }
                     }
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 16)
         }
     }
 
@@ -301,27 +300,27 @@ struct DashboardView: View {
         Button {
             store.selectProfile(profile)
         } label: {
-            liquidCard(height: 66, selected: profile.id == store.activeProfile?.id) {
-                HStack(spacing: 12) {
+            liquidCard(height: 58, selected: profile.id == store.activeProfile?.id) {
+                HStack(spacing: 10) {
                     profileFlag(for: profile)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(profile.title)
-                            .font(.system(size: 16, weight: .black, design: .rounded))
+                            .font(.system(size: 15, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.62)
                         Text(profile.nodes.first.map { "\($0.server):\($0.port)" } ?? profile.source)
-                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.50))
                             .lineLimit(1)
                     }
 
-                    Spacer(minLength: 12)
+                    Spacer(minLength: 10)
 
                     pingBadge(for: profile)
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 14)
             }
         }
         .buttonStyle(.plain)
@@ -346,15 +345,15 @@ struct DashboardView: View {
     private func profileFlag(for profile: ProfileSummary) -> some View {
         if let countryCode = store.profileCountryCodes[profile.id] {
             Text(flagEmoji(countryCode))
-                .font(.system(size: 31, weight: .black))
-                .frame(width: 40, height: 42)
+                .font(.system(size: 28, weight: .black))
+                .frame(width: 36, height: 38)
                 .accessibilityLabel(Text(countryCode))
         } else {
             Image(systemName: "globe")
-                .font(.system(size: 25, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(Theme.accentGradient(store))
                 .symbolVariant(.none)
-                .frame(width: 40, height: 42)
+                .frame(width: 36, height: 38)
         }
     }
 
@@ -384,7 +383,7 @@ struct DashboardView: View {
                     .foregroundStyle(.white.opacity(0.48))
             }
         }
-        .frame(width: 78, alignment: .trailing)
+        .frame(width: 74, alignment: .trailing)
     }
 
     private var controlDock: some View {
@@ -396,21 +395,21 @@ struct DashboardView: View {
                 .overlay(Circle().fill(Theme.dockButtonWell))
                 .shadow(color: Theme.currentAccent(store).opacity(0.34), radius: 24, x: 0, y: 0)
                 .shadow(color: .black.opacity(0.42), radius: 16, x: 0, y: 12)
-                .frame(width: 108, height: 108)
-                .offset(y: -20)
+                .frame(width: 100, height: 100)
+                .offset(y: -18)
 
             HStack(alignment: .center) {
                 routerOrFlagDockControl
                 Spacer()
                 pingControl
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 20)
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
 
             powerControl
-                .offset(y: -20)
+                .offset(y: -18)
         }
-        .frame(height: 118)
+        .frame(height: 110)
     }
 
     private var dockTray: some View {
@@ -425,10 +424,10 @@ struct DashboardView: View {
                     .padding(.horizontal, 22)
                     .padding(.top, 5)
             }
-            .shadow(color: Theme.currentAccent(store).opacity(0.38), radius: 22, x: 0, y: 0)
-            .shadow(color: .black.opacity(0.50), radius: 22, x: 0, y: 16)
-            .frame(height: 78)
-            .padding(.top, 20)
+            .shadow(color: Theme.currentAccent(store).opacity(0.30), radius: 20, x: 0, y: 0)
+            .shadow(color: .black.opacity(0.46), radius: 20, x: 0, y: 14)
+            .frame(height: 72)
+            .padding(.top, 18)
     }
 
     private var routerOrFlagDockControl: some View {
@@ -444,7 +443,7 @@ struct DashboardView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.62)
                 }
-                .frame(width: 132, alignment: .leading)
+                .frame(width: 120, alignment: .leading)
             } else {
                 routerSocksDockControl
             }
@@ -482,16 +481,16 @@ struct DashboardView: View {
 
                 Circle()
                     .fill(store.routerSocksModeEnabled ? AnyShapeStyle(Theme.accentGradient(store)) : AnyShapeStyle(LinearGradient(colors: [.white.opacity(0.92), Theme.panel.opacity(0.78)], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                    .frame(width: 32, height: 32)
+                    .frame(width: 26, height: 26)
                     .overlay(
                         Image(systemName: "globe")
-                            .font(.system(size: 15, weight: .black))
+                            .font(.system(size: 12, weight: .black))
                             .foregroundStyle(.white)
                     )
                     .shadow(color: Theme.purple.opacity(0.58), radius: 18, x: 0, y: 0)
                     .padding(4)
             }
-            .frame(width: 82, height: 42)
+            .frame(width: 66, height: 34)
         }
         .buttonStyle(.plain)
         .help("Router SOCKS")
@@ -513,11 +512,11 @@ struct DashboardView: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "power")
-                        .font(.system(size: 39, weight: .black))
+                        .font(.system(size: 36, weight: .black))
                         .foregroundStyle(.white)
                 }
             }
-            .frame(width: 88, height: 88)
+            .frame(width: 82, height: 82)
         }
         .buttonStyle(.plain)
         .help(store.tunnel.connected ? "Disconnect" : "Connect")
@@ -534,11 +533,11 @@ struct DashboardView: View {
                         .tint(Theme.currentAccent(store))
                 } else {
                     Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 25, weight: .black))
+                        .font(.system(size: 22, weight: .black))
                         .foregroundStyle(Theme.currentAccent(store))
                 }
                 Text(store.lastPingMs.map { "\($0)" } ?? "--")
-                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .font(.system(size: 20, weight: .black, design: .rounded))
                     .foregroundStyle(store.lastPingMs.map(pingColor) ?? Theme.currentAccent(store))
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
@@ -549,7 +548,7 @@ struct DashboardView: View {
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 138, alignment: .trailing)
+        .frame(width: 126, alignment: .trailing)
         .help("Ping")
     }
 
@@ -676,15 +675,24 @@ struct DashboardView: View {
         Button(action: action) {
             ZStack {
                 Circle()
+                    .fill(.ultraThinMaterial)
+                Circle()
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.28), Theme.violet.opacity(0.30), Theme.panel.opacity(0.84)],
+                            colors: [Color.white.opacity(0.22), Theme.violet.opacity(0.24), Theme.panel.opacity(0.76)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .shadow(color: Theme.currentAccent(store).opacity(0.42), radius: 14, x: 0, y: 0)
-                    .shadow(color: .black.opacity(0.34), radius: 9, x: 0, y: 7)
+                    .overlay(alignment: .topLeading) {
+                        Circle()
+                            .fill(Color.white.opacity(0.20))
+                            .frame(width: size * 0.42, height: size * 0.42)
+                            .blur(radius: 1.8)
+                            .offset(x: size * 0.12, y: size * 0.10)
+                    }
+                    .shadow(color: Theme.currentAccent(store).opacity(0.28), radius: 12, x: 0, y: 0)
+                    .shadow(color: .black.opacity(0.28), radius: 8, x: 0, y: 6)
 
                 if loading {
                     ProgressView()
@@ -724,10 +732,10 @@ struct DashboardView: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(selected ? 0.22 : 0.13),
-                            Theme.shellTop.opacity(0.68),
-                            Theme.panel.opacity(0.86),
-                            Theme.purple.opacity(selected ? 0.26 : 0.12)
+                            Color.white.opacity(selected ? 0.18 : 0.10),
+                            Theme.shellTop.opacity(0.54),
+                            Theme.panel.opacity(0.72),
+                            Theme.purple.opacity(selected ? 0.22 : 0.08)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -737,14 +745,14 @@ struct DashboardView: View {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.42), Color.white.opacity(0.12), .clear],
+                                colors: [Color.white.opacity(0.32), Color.white.opacity(0.09), .clear],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .frame(width: 118, height: height * 0.62)
                         .blur(radius: 1.2)
-                        .opacity(0.58)
+                        .opacity(0.48)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -758,8 +766,8 @@ struct DashboardView: View {
                         )
                         .allowsHitTesting(false)
                 }
-                .shadow(color: Theme.currentAccent(store).opacity(selected ? 0.34 : 0.16), radius: selected ? 14 : 8, x: 0, y: 0)
-                .shadow(color: .black.opacity(0.30), radius: 12, x: 0, y: 7)
+                .shadow(color: Theme.currentAccent(store).opacity(selected ? 0.26 : 0.10), radius: selected ? 12 : 7, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.26), radius: 11, x: 0, y: 7)
 
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
