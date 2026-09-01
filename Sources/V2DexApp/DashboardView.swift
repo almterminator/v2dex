@@ -54,12 +54,9 @@ struct DashboardView: View {
 
     private var appShell: some View {
         VStack(alignment: .leading, spacing: 16) {
-            trafficLights
-                .padding(.top, 22)
-                .padding(.leading, 28)
-
             topBar
                 .padding(.horizontal, 28)
+                .padding(.top, 42)
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
@@ -107,10 +104,10 @@ struct DashboardView: View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(store.activeProfile?.title ?? "No config selected")
-                    .font(.system(size: 29, weight: .black, design: .rounded))
+                    .font(.system(size: 31, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.48)
+                    .minimumScaleFactor(0.44)
                     .shadow(color: .black.opacity(0.28), radius: 5, x: 0, y: 4)
 
                 Text(store.statusLine)
@@ -130,6 +127,34 @@ struct DashboardView: View {
                 }
             }
         }
+        .padding(.leading, 22)
+        .padding(.trailing, 14)
+        .padding(.vertical, 16)
+        .background {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(Theme.headerGlass)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(Theme.shellStroke, lineWidth: 1.15)
+        }
+        .overlay(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.26), Color.white.opacity(0.06), .clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 210, height: 58)
+                .blur(radius: 1.4)
+                .allowsHitTesting(false)
+        }
+        .shadow(color: Theme.currentAccent(store).opacity(0.20), radius: 20, x: 0, y: 0)
+        .shadow(color: .black.opacity(0.30), radius: 18, x: 0, y: 12)
     }
 
     private var savedConfigsPanel: some View {
@@ -404,6 +429,15 @@ struct DashboardView: View {
         ZStack(alignment: .center) {
             dockTray
 
+            Circle()
+                .fill(.ultraThinMaterial)
+                .overlay(Circle().fill(Theme.dockButtonWell))
+                .overlay(Circle().stroke(Theme.accentGradient(store), lineWidth: 2.2))
+                .shadow(color: Theme.currentAccent(store).opacity(0.34), radius: 24, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.42), radius: 16, x: 0, y: 12)
+                .frame(width: 108, height: 108)
+                .offset(y: -20)
+
             HStack(alignment: .center) {
                 routerOrFlagDockControl
                 Spacer()
@@ -420,21 +454,12 @@ struct DashboardView: View {
 
     private var dockTray: some View {
         RoundedRectangle(cornerRadius: 44, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.13),
-                        Theme.panel.opacity(0.98),
-                        Theme.purple.opacity(0.18)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .fill(.ultraThinMaterial)
+            .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).fill(Theme.dockGlass))
             .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(Theme.accentGradient(store), lineWidth: 2.4))
             .overlay(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 44, style: .continuous)
-                    .stroke(Color.white.opacity(0.58), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.66), lineWidth: 1)
                     .blur(radius: 1.4)
                     .padding(3)
             }
@@ -724,14 +749,15 @@ struct DashboardView: View {
     private func liquidCard<Content: View>(height: CGFloat, selected: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.thinMaterial)
+                .fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(selected ? 0.16 : 0.10),
-                            Theme.panel.opacity(0.82),
-                            Theme.purple.opacity(selected ? 0.18 : 0.09)
+                            Color.white.opacity(selected ? 0.22 : 0.13),
+                            Theme.shellTop.opacity(0.68),
+                            Theme.panel.opacity(0.86),
+                            Theme.purple.opacity(selected ? 0.26 : 0.12)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -742,14 +768,26 @@ struct DashboardView: View {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.34), Color.white.opacity(0.08), .clear],
+                                colors: [Color.white.opacity(0.42), Color.white.opacity(0.12), .clear],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 104, height: height * 0.58)
+                        .frame(width: 118, height: height * 0.62)
                         .blur(radius: 1.2)
-                        .opacity(0.48)
+                        .opacity(0.58)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(
+                            RadialGradient(
+                                colors: [Theme.currentAccent(store).opacity(selected ? 0.20 : 0.10), .clear],
+                                center: .bottomTrailing,
+                                startRadius: 0,
+                                endRadius: 150
+                            )
+                        )
+                        .allowsHitTesting(false)
                 }
                 .shadow(color: Theme.currentAccent(store).opacity(selected ? 0.34 : 0.16), radius: selected ? 14 : 8, x: 0, y: 0)
                 .shadow(color: .black.opacity(0.30), radius: 12, x: 0, y: 7)
@@ -804,6 +842,35 @@ private enum Theme {
     )
     static let shellStroke = LinearGradient(colors: [Color.white.opacity(0.40), violet.opacity(0.70), purple.opacity(0.36)], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let cardStroke = LinearGradient(colors: [Color.white.opacity(0.42), violet.opacity(0.56), purple.opacity(0.62)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let headerGlass = LinearGradient(
+        colors: [
+            Color.white.opacity(0.13),
+            shellTop.opacity(0.52),
+            panel.opacity(0.74),
+            purple.opacity(0.18)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let dockGlass = LinearGradient(
+        colors: [
+            Color.white.opacity(0.18),
+            shellTop.opacity(0.64),
+            panel.opacity(0.94),
+            purple.opacity(0.22)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let dockButtonWell = LinearGradient(
+        colors: [
+            Color.white.opacity(0.16),
+            panel.opacity(0.78),
+            background.opacity(0.92)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 
     @MainActor
     static func currentAccent(_ store: AppStore) -> Color {
