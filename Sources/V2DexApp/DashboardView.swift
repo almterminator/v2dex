@@ -56,7 +56,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 16) {
             topBar
                 .padding(.horizontal, 28)
-                .padding(.top, 42)
+                .padding(.top, 18)
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
@@ -90,7 +90,7 @@ struct DashboardView: View {
     }
 
     private var topBar: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(store.activeProfile?.title ?? "No config selected")
                     .font(.system(size: 31, weight: .black, design: .rounded))
@@ -108,38 +108,15 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 9) {
-                orbButton(icon: "globe", size: 42, iconSize: 18, help: "Connection") {
+                headerIconButton(icon: "globe", iconSize: 19, help: "Connection") {
                     showingProxyPopup = true
                 }
-                orbButton(icon: "plus", size: 42, iconSize: 23, help: "Import config") {
+                headerIconButton(icon: "plus", iconSize: 24, help: "Import config") {
                     showingImportPopup = true
                 }
             }
+            .padding(.top, 1)
         }
-        .padding(.leading, 22)
-        .padding(.trailing, 14)
-        .padding(.vertical, 16)
-        .background {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(Theme.headerGlass)
-        }
-        .overlay(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.26), Color.white.opacity(0.06), .clear],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 210, height: 58)
-                .blur(radius: 1.4)
-                .allowsHitTesting(false)
-        }
-        .shadow(color: Theme.currentAccent(store).opacity(0.20), radius: 20, x: 0, y: 0)
-        .shadow(color: .black.opacity(0.30), radius: 18, x: 0, y: 12)
     }
 
     private var savedConfigsPanel: some View {
@@ -720,6 +697,20 @@ struct DashboardView: View {
                 }
             }
             .frame(width: size, height: size)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func headerIconButton(icon: String, iconSize: CGFloat, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: iconSize, weight: .black))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+                .shadow(color: Theme.currentAccent(store).opacity(0.46), radius: 8, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.26), radius: 5, x: 0, y: 4)
         }
         .buttonStyle(.plain)
         .help(help)
