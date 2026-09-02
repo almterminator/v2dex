@@ -23,6 +23,8 @@ final class AppStore: ObservableObject {
     @Published var profilePingStates: [String: ProfilePingState] = [:]
     @Published var profileCountryCodes: [String: String] = [:]
     @Published var routerSocksModeEnabled = false
+    @Published var checkingOpenAIConnectivity = false
+    @Published var openAIConnectivityLine = "OpenAI not checked"
     private var routerSocksProxyActive = false
 
     nonisolated private static let routerSocksPort = 43_080
@@ -38,6 +40,11 @@ final class AppStore: ObservableObject {
         "https://ipinfo.io/json",
         "https://ipwho.is/",
         "https://ipapi.co/json/"
+    ]
+    nonisolated private static let openAIProbeURLs = [
+        "https://chatgpt.com/",
+        "https://api.openai.com/v1/models",
+        "https://auth.openai.com/"
     ]
 
     private struct PersistedAppState: Codable {
@@ -118,6 +125,7 @@ final class AppStore: ObservableObject {
 
                 await refreshExitLocation(afterConnectingTo: node)
                 await runActivePing()
+                await refreshOpenAIConnectivity()
             } catch {
                 await MainActor.run {
                     tunnel.connecting = false
@@ -164,6 +172,8 @@ final class AppStore: ObservableObject {
                     tunnel.countryCode = nil
                     tunnel.countryName = nil
                     routerSocksProxyActive = false
+                    checkingOpenAIConnectivity = false
+                    openAIConnectivityLine = "OpenAI not checked"
                     statusLine = "Disconnected. Wi-Fi proxies are off."
                 }
             } catch {
@@ -175,6 +185,8 @@ final class AppStore: ObservableObject {
                     tunnel.countryCode = nil
                     tunnel.countryName = nil
                     routerSocksProxyActive = false
+                    checkingOpenAIConnectivity = false
+                    openAIConnectivityLine = "OpenAI not checked"
                     statusLine = "Disconnected with cleanup warning: \(error.localizedDescription)"
                 }
             }
@@ -565,6 +577,17 @@ final class AppStore: ObservableObject {
         pingProfile(activeProfile)
     }
 
+    func checkOpenAIConnectivity() {
+        guard tunnel.connected else {
+            openAIConnectivityLine = "Connect first to test OpenAI"
+            return
+        }
+
+        Task {
+            await refreshOpenAIConnectivity()
+        }
+    }
+
     func refreshConfigPreview() {
         guard let node = activeNode else {
             configPreview = "{}"
@@ -618,6 +641,43 @@ final class AppStore: ObservableObject {
                 statusLine = "Ping failed for \(activeProfile.title)"
             }
         }
+    }
+
+    private func refreshOpenAIConnectivity() async {
+        await MainActor.run {
+            checkingOpenAIConnectivity = true
+            openAIConnectivityLine = "Checking OpenAI..."
+        }
+
+        do {
+            let result = try await Self.testOpenAIReachability()
+            await MainActor.run {
+                checkingOpenAIConnectivity = false
+                openAIConnectivityLine = "OpenAI reachable in \(result.latencyMs) ms"
+            }
+        } catch {
+            await MainActor.run {
+                checkingOpenAIConnectivity = false
+                openAIConnectivityLine = "OpenAI blocked on this config"
+            }
+        }
+    }
+
+    private nonisolated static func testOpenAIReachability() async throws -> TunnelHTTPProbeResult {
+        var lastError: Error?
+        for url in openAIProbeURLs {
+            do {
+                return try await ConnectivityTester.testHTTPReachabilityViaLocalProxy(
+                    url: url,
+                    proxyHost: SingboxConfigBuilder.loopbackProxyHost,
+                    proxyPort: SingboxConfigBuilder.localProxyPort,
+                    timeout: 5
+                )
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? URLError(.cannotConnectToHost)
     }
 
     private func measuredLatency(for node: ProxyNode, profileID: String?) async throws -> Int {

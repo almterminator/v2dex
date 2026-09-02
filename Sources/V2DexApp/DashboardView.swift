@@ -621,6 +621,7 @@ struct DashboardView: View {
             }
             proxyChip(icon: "globe", text: "HTTP 127.0.0.1:2081")
             proxyChip(icon: "point.3.connected.trianglepath.dotted", text: "SOCKS 2082")
+            openAIProbeRow
 
             Divider()
                 .overlay(Color.white.opacity(0.14))
@@ -641,6 +642,51 @@ struct DashboardView: View {
         .padding(18)
         .frame(width: 300)
         .background(Theme.panel)
+    }
+
+    private var openAIProbeRow: some View {
+        HStack(spacing: 12) {
+            if store.checkingOpenAIConnectivity {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(Theme.currentAccent(store))
+                    .frame(width: 20)
+            } else {
+                Image(systemName: store.openAIConnectivityLine.contains("reachable") ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(store.openAIConnectivityLine.contains("reachable") ? Theme.green : Theme.orange)
+                    .font(.system(size: 15, weight: .black))
+                    .frame(width: 20)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("OpenAI")
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(store.openAIConnectivityLine)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            Spacer()
+
+            Button {
+                store.checkOpenAIConnectivity()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(store.checkingOpenAIConnectivity)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.055))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var routerSocksModeBinding: Binding<Bool> {

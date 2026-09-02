@@ -244,6 +244,42 @@ public enum ConnectivityTester {
         )
     }
 
+    public static func testHTTPReachabilityViaLocalProxy(
+        url: String,
+        proxyHost: String,
+        proxyPort: Int,
+        timeout: TimeInterval = 15
+    ) async throws -> TunnelHTTPProbeResult {
+        let startedAt = Date()
+        let response = try await runCurl(
+            arguments: [
+                "--silent",
+                "--show-error",
+                "--head",
+                "--output",
+                "/dev/null",
+                "--write-out",
+                "%{http_code}",
+                "--max-time",
+                String(format: "%.2f", timeout),
+                "--proxy",
+                "socks5h://\(proxyHost):\(proxyPort)",
+                url
+            ],
+            timeout: timeout + 1
+        )
+        let status = Int(response.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+
+        guard (100...499).contains(status) else {
+            throw TestError.httpStatus(status)
+        }
+
+        return TunnelHTTPProbeResult(
+            latencyMs: max(Int((Date().timeIntervalSince(startedAt) * 1000).rounded()), 1),
+            url: url
+        )
+    }
+
     public static func fetchTextViaLocalProxy(
         url: String,
         proxyHost: String,
