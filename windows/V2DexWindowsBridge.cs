@@ -125,7 +125,11 @@ namespace V2Dex.Windows
         {
             return source
                 .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(value => value.StartsWith("vless://", StringComparison.OrdinalIgnoreCase));
+                .Where(value =>
+                    value.StartsWith("vless://", StringComparison.OrdinalIgnoreCase) ||
+                    value.StartsWith("socks://", StringComparison.OrdinalIgnoreCase) ||
+                    value.StartsWith("socks5://", StringComparison.OrdinalIgnoreCase) ||
+                    LooksLikeHttpProxyUri(value));
         }
 
         private static Dictionary<string, object?>? ParseNodeUri(string uri)
@@ -134,8 +138,35 @@ namespace V2Dex.Windows
             {
                 return ParseVlessUri(uri);
             }
+            if (uri.StartsWith("socks://", StringComparison.OrdinalIgnoreCase) ||
+                uri.StartsWith("socks5://", StringComparison.OrdinalIgnoreCase))
+            {
+                return ParseSimpleProxyUri(uri, "socks5");
+            }
+            if (uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return ParseSimpleProxyUri(uri, uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? "https" : "http");
+            }
 
             return null;
+        }
+
+        private static bool LooksLikeHttpProxyUri(string value)
+        {
+            if (!value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(uri.UserInfo) ||
+                   (!uri.IsDefaultPort && string.IsNullOrWhiteSpace(uri.AbsolutePath.Trim('/')));
         }
 
         private static Dictionary<string, object?> ParseVlessUri(string raw)
@@ -170,6 +201,49 @@ namespace V2Dex.Windows
                 ["alpn"] = alpn is { Length: > 0 } ? alpn : null,
                 ["rawUri"] = raw
             };
+        }
+
+        private static Dictionary<string, object?> ParseSimpleProxyUri(string raw, string protocol)
+        {
+            var parsed = new Uri(raw);
+            var name = DecodePercentEncodingRepeatedly(parsed.Fragment.TrimStart('#'));
+            var credentials = DecodeProxyCredentials(parsed.UserInfo);
+
+            return new Dictionary<string, object?>
+            {
+                ["id"] = $"node-{HashString(raw)}",
+                ["name"] = name.Length > 0 ? name : $"{protocol.ToUpperInvariant()} {parsed.Host}",
+                ["protocol"] = protocol,
+                ["server"] = parsed.Host,
+                ["port"] = parsed.IsDefaultPort ? (protocol == "https" ? 443 : 80) : parsed.Port,
+                ["username"] = credentials.username,
+                ["password"] = credentials.password,
+                ["rawUri"] = raw
+            };
+        }
+
+        private static (string? username, string? password) DecodeProxyCredentials(string userInfo)
+        {
+            if (string.IsNullOrWhiteSpace(userInfo))
+            {
+                return (null, null);
+            }
+
+            var decoded = DecodePercentEncodingRepeatedly(userInfo);
+            try
+            {
+                var base64Decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(decoded));
+                if (!string.IsNullOrWhiteSpace(base64Decoded))
+                {
+                    decoded = base64Decoded;
+                }
+            }
+            catch
+            {
+            }
+
+            var parts = decoded.Split(':', 2);
+            return parts.Length == 2 ? (parts[0], parts[1]) : (decoded, null);
         }
 
         private static Dictionary<string, string> ParseQuery(string query)

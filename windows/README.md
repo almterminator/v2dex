@@ -1,31 +1,36 @@
-# Windows Native Backend Plan
+# V2Dex Windows
 
-This folder is the placeholder for the React Native Windows host app and native backend.
+This folder contains the Windows desktop implementation for V2Dex.
 
-## Intended components
+## Components
 
 - `V2DexWindowsBridge`
-  - React Native Windows native module
-  - import, app discovery, tunnel start/stop, status reporting
-- `V2DexTunnelService`
-  - service or elevated helper process
-  - owns `sing-box` lifecycle
-  - owns tunnel adapter lifecycle
-- `V2DexCore.Win`
-  - config generation and Windows-specific runtime helpers
+  - native C# bridge for import, tunnel start/stop, status, ping, IP lookup, and clipboard.
+- `WindowsTunnelRuntime`
+  - launches `sing-box.exe`, enables Windows system proxy, and clears proxy settings on stop.
+- `V2Dex.WindowsApp`
+  - WPF desktop app with the same compact glass UI direction as the current macOS app.
 
-## Recommended stack
+## Build
 
-- React Native Windows
-- C# or C++/WinRT native module
-- `sing-box` Windows binary
-- Wintun driver
-- optional Windows service for resilience and privilege separation
+Build on Windows with .NET SDK 8.0 or newer:
 
-## Minimum milestone
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows\build-windows-app.ps1
+```
 
-1. parse URI and build config
-2. launch `sing-box` in user mode
-3. expose tunnel state to RN
-4. add Wintun-backed full tunnel
-5. add per-app routing policy
+The output is written to:
+
+```text
+windows\artifacts\V2Dex.WindowsApp-win-x64
+```
+
+Place `sing-box.exe` next to `V2Dex.exe`, or set `V2DEX_SING_BOX_PATH`.
+
+## Current Scope
+
+- Supports the existing user-space Windows system proxy approach.
+- Connect starts `sing-box` and points Windows proxy settings at `127.0.0.1:2080`.
+- Disconnect stops `sing-box` and clears Windows proxy settings.
+- The WPF UI includes import, saved configs, ping all, connect/disconnect, active ping, and exit country display.
+- Packet-level VPN/Wintun and real per-app routing still require a dedicated Windows tunnel/service implementation.
