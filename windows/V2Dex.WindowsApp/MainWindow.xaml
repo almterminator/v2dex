@@ -12,21 +12,33 @@
         ResizeMode="CanResizeWithGrip">
     <Window.Resources>
         <LinearGradientBrush x:Key="AppBackground" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#050712" Offset="0" />
-            <GradientStop Color="#101132" Offset="0.42" />
-            <GradientStop Color="#070815" Offset="1" />
+            <GradientStop Color="#030511" Offset="0" />
+            <GradientStop Color="#0A0D25" Offset="0.42" />
+            <GradientStop Color="#050612" Offset="1" />
         </LinearGradientBrush>
 
         <LinearGradientBrush x:Key="GlassFill" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#35FFFFFF" Offset="0" />
-            <GradientStop Color="#161D45" Offset="0.48" />
-            <GradientStop Color="#3A235D" Offset="1" />
+            <GradientStop Color="#2EFFFFFF" Offset="0" />
+            <GradientStop Color="#141A3B" Offset="0.48" />
+            <GradientStop Color="#2B1D4B" Offset="1" />
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="SelectedGlassFill" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#3FFFFFFF" Offset="0" />
+            <GradientStop Color="#1A2556" Offset="0.44" />
+            <GradientStop Color="#50319B" Offset="1" />
+        </LinearGradientBrush>
+
+        <LinearGradientBrush x:Key="TopSheen" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#40FFFFFF" Offset="0" />
+            <GradientStop Color="#10FFFFFF" Offset="0.44" />
+            <GradientStop Color="#00FFFFFF" Offset="1" />
         </LinearGradientBrush>
 
         <LinearGradientBrush x:Key="DockFill" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#38FFFFFF" Offset="0" />
-            <GradientStop Color="#151735" Offset="0.45" />
-            <GradientStop Color="#261245" Offset="1" />
+            <GradientStop Color="#33FFFFFF" Offset="0" />
+            <GradientStop Color="#12162F" Offset="0.48" />
+            <GradientStop Color="#21113C" Offset="1" />
         </LinearGradientBrush>
 
         <LinearGradientBrush x:Key="PowerFill" StartPoint="0,0" EndPoint="1,1">
@@ -38,6 +50,7 @@
         <SolidColorBrush x:Key="LatencyGood" Color="#67F6A6" />
         <SolidColorBrush x:Key="LatencyWarn" Color="#FFB15C" />
         <SolidColorBrush x:Key="Accent" Color="#9C8BFF" />
+        <SolidColorBrush x:Key="AccentSoft" Color="#6F55F2" />
 
         <Style x:Key="HeaderIconButton" TargetType="Button">
             <Setter Property="Width" Value="34" />
@@ -54,6 +67,11 @@
                         <Border Background="{TemplateBinding Background}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.78" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -132,13 +150,62 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="ConfigRowCard" TargetType="Border">
+            <Setter Property="Height" Value="58" />
+            <Setter Property="CornerRadius" Value="18" />
+            <Setter Property="Background" Value="{StaticResource GlassFill}" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#000000" BlurRadius="10" ShadowDepth="6" Opacity="0.22" />
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Selected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource SelectedGlassFill}" />
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#7A5CFF" BlurRadius="15" ShadowDepth="0" Opacity="0.34" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Border CornerRadius="30"
             Background="{StaticResource AppBackground}"
-            Padding="28"
             MouseLeftButtonDown="WindowDragMouseDown">
-        <Grid>
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="34" ShadowDepth="18" Opacity="0.45" />
+        </Border.Effect>
+        <Grid ClipToBounds="True">
+            <Ellipse Width="430"
+                     Height="430"
+                     Fill="#332E1F80"
+                     HorizontalAlignment="Right"
+                     VerticalAlignment="Bottom"
+                     Margin="0,0,-160,-130">
+                <Ellipse.Effect>
+                    <BlurEffect Radius="48" />
+                </Ellipse.Effect>
+            </Ellipse>
+            <Ellipse Width="300"
+                     Height="260"
+                     Fill="#242673FF"
+                     HorizontalAlignment="Left"
+                     VerticalAlignment="Top"
+                     Margin="-120,-80,0,0">
+                <Ellipse.Effect>
+                    <BlurEffect Radius="46" />
+                </Ellipse.Effect>
+            </Ellipse>
+            <Border CornerRadius="30"
+                    Background="#26000000"
+                    Margin="12" />
+
+            <Grid Margin="28">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -150,7 +217,7 @@
                     <TextBlock Text="{Binding HeaderTitle}"
                                Foreground="White"
                                FontFamily="Segoe UI Variable Display, Segoe UI"
-                               FontSize="30"
+                               FontSize="31"
                                FontWeight="Black"
                                TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding StatusLine}"
@@ -184,10 +251,10 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="⌃"
                                    Foreground="White"
-                                   FontSize="20"
+                                   FontSize="18"
                                    FontWeight="Black"
                                    VerticalAlignment="Center"
-                                   Margin="0,0,16,1" />
+                                   Margin="0,0,14,1" />
                         <TextBlock Text="Saved Configs"
                                    Foreground="White"
                                    FontFamily="Segoe UI Variable Display, Segoe UI"
@@ -220,14 +287,16 @@
                          SelectionChanged="ProfileSelectionChanged">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border Height="58"
-                                    CornerRadius="18"
-                                    Background="{StaticResource GlassFill}"
-                                    Padding="14,0">
-                                <Border.Effect>
-                                    <DropShadowEffect Color="#000000" BlurRadius="10" ShadowDepth="6" Opacity="0.22" />
-                                </Border.Effect>
+                            <Border Style="{StaticResource ConfigRowCard}">
                                 <Grid>
+                                    <Rectangle Width="120"
+                                               Height="34"
+                                               RadiusX="16"
+                                               RadiusY="16"
+                                               Fill="{StaticResource TopSheen}"
+                                               HorizontalAlignment="Left"
+                                               VerticalAlignment="Top"
+                                               Opacity="0.45" />
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="42" />
                                         <ColumnDefinition Width="*" />
@@ -275,6 +344,10 @@
                         <DropShadowEffect Color="#6D49FF" BlurRadius="22" ShadowDepth="0" Opacity="0.28" />
                     </Border.Effect>
                     <Grid Margin="24,0">
+                        <Rectangle Height="1"
+                                   Fill="#22FFFFFF"
+                                   VerticalAlignment="Top"
+                                   Margin="24,5,24,0" />
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="*" />
@@ -310,6 +383,17 @@
                     </Grid>
                 </Border>
 
+                <Ellipse Width="100"
+                         Height="100"
+                         Fill="#22000000"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Top"
+                         Margin="0,-9,0,0">
+                    <Ellipse.Effect>
+                        <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="8" Opacity="0.38" />
+                    </Ellipse.Effect>
+                </Ellipse>
+
                 <Button Width="82"
                         Height="82"
                         HorizontalAlignment="Center"
@@ -334,6 +418,7 @@
                         </ControlTemplate>
                     </Button.Template>
                 </Button>
+            </Grid>
             </Grid>
         </Grid>
     </Border>
