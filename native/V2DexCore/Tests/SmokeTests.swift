@@ -116,6 +116,7 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(inbounds.count, 1)
         XCTAssertEqual(route["final"] as? String, "proxy")
         XCTAssertEqual(tunInbound["auto_route"] as? Bool, true)
+        XCTAssertEqual(tunInbound["route_exclude_address"] as? [String], ["104.17.196.239/32"])
         XCTAssertEqual(proxyOutbound["type"] as? String, "socks")
         XCTAssertEqual(proxyOutbound["server"] as? String, "127.0.0.1")
         XCTAssertEqual(proxyOutbound["server_port"] as? Int, XrayConfigBuilder.localSocksProxyPort)

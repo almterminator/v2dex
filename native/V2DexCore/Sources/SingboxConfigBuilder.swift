@@ -62,6 +62,16 @@ public enum SingboxConfigBuilder {
         socksPort: Int = XrayConfigBuilder.localSocksProxyPort,
         directServer: String? = nil
     ) throws -> Data {
+        var tunInbound: [String: Any] = [
+            "type": "tun",
+            "tag": "tun-in",
+            "address": [
+                tunAddress
+            ],
+            "auto_route": true,
+            "strict_route": true,
+            "stack": "system"
+        ]
         var routeRules: [[String: Any]] = [
             [
                 "process_name": [
@@ -79,10 +89,12 @@ public enum SingboxConfigBuilder {
 
         if let directServer, !directServer.isEmpty {
             if isIPv4Address(directServer) {
+                let serverCIDR = "\(directServer)/32"
+                tunInbound["route_exclude_address"] = [serverCIDR]
                 routeRules.insert(
                     [
                         "ip_cidr": [
-                            "\(directServer)/32"
+                            serverCIDR
                         ],
                         "action": "route",
                         "outbound": "direct"
@@ -118,16 +130,7 @@ public enum SingboxConfigBuilder {
                 "strategy": "prefer_ipv4"
             ],
             "inbounds": [
-                [
-                    "type": "tun",
-                    "tag": "tun-in",
-                    "address": [
-                        tunAddress
-                    ],
-                    "auto_route": true,
-                    "strict_route": true,
-                    "stack": "system"
-                ]
+                tunInbound
             ],
             "outbounds": [
                 [
