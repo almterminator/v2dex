@@ -29,6 +29,7 @@ public final class SingboxRuntime: @unchecked Sendable {
     private var outputLog: [String] = []
     private var elevatedPID: Int32?
     private var elevatedLogPath: String?
+    private var xrayLogPath: String?
     private var activeProxyPort = SingboxConfigBuilder.localProxyPort
     private var proxiedAppBundleIDs: [String] = []
     private var unsupportedPerAppBundleIDs: [String] = []
@@ -115,6 +116,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.activeConfigPath = configPath
             self.activeProxyPort = SingboxConfigBuilder.localProxyPort
             self.elevatedLogPath = usesElevatedTun ? elevatedLogPath : nil
+            self.xrayLogPath = nil
             self.proxiedAppBundleIDs = []
             self.unsupportedPerAppBundleIDs = []
         }
@@ -243,6 +245,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.activeConfigPath = configPath
             self.activeProxyPort = XrayConfigBuilder.localSocksProxyPort
             self.elevatedLogPath = nil
+            self.xrayLogPath = nil
             self.elevatedPID = nil
             self.proxiedAppBundleIDs = []
             self.unsupportedPerAppBundleIDs = []
@@ -336,6 +339,10 @@ public final class SingboxRuntime: @unchecked Sendable {
         let elevatedLogPath = fileManager.temporaryDirectory
             .appendingPathComponent("v2dex-sing-box-\(UUID().uuidString).log")
             .path
+        let xrayLogPath = fileManager.temporaryDirectory
+            .appendingPathComponent("v2dex-xray-\(UUID().uuidString).log")
+            .path
+        fileManager.createFile(atPath: xrayLogPath, contents: nil)
 
         stateQueue.sync {
             self.connecting = true
@@ -346,6 +353,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.activeConfigPath = xrayConfigPath
             self.activeProxyPort = localSocksPort
             self.elevatedLogPath = elevatedLogPath
+            self.xrayLogPath = xrayLogPath
             self.elevatedPID = nil
             self.proxiedAppBundleIDs = []
             self.unsupportedPerAppBundleIDs = []
@@ -366,6 +374,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 return
             }
             self?.appendOutput(line)
+            self?.appendLogData(data, to: xrayLogPath)
         }
 
         stdout.fileHandleForReading.readabilityHandler = outputHandler
@@ -386,8 +395,12 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.elevatedLogPath = nil
                 self.connecting = false
                 if process.terminationStatus != 0 {
+                    let logTail = self.readLogTail(path: xrayLogPath, lineLimit: 30)
                     let message = "xray exited with code \(process.terminationStatus)"
                     self.lastError = ([message] + cleanupErrors).joined(separator: "\n")
+                    if !logTail.isEmpty {
+                        self.lastError = ([message, logTail] + cleanupErrors).joined(separator: "\n")
+                    }
                 } else if !cleanupErrors.isEmpty {
                     self.lastError = cleanupErrors.joined(separator: "\n")
                 }
@@ -411,7 +424,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             }
             try waitForElevatedRuntimeAlive(elevatedPID: pid, logPath: elevatedLogPath)
             guard process.isRunning else {
-                let logTail = recentOutput(limit: 30).joined(separator: "\n")
+                let logTail = readLogTail(path: xrayLogPath, lineLimit: 30)
                 try? killElevatedSingbox()
                 throw SingboxRuntimeError.proxyStartupFailed(
                     reason: logTail.isEmpty ? "xray exited after TUN mode started." : logTail
@@ -433,6 +446,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.process = nil
                 self.elevatedPID = nil
                 self.elevatedLogPath = nil
+                self.xrayLogPath = nil
                 self.proxiedAppBundleIDs = []
                 self.lastError = ([error.localizedDescription] + cleanupErrors).joined(separator: "\n")
             }
@@ -452,6 +466,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.process = nil
             self.elevatedPID = nil
             self.elevatedLogPath = nil
+            self.xrayLogPath = nil
             self.connecting = false
             self.mode = .full
             self.backend = .systemProxy
@@ -514,6 +529,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.proxiedAppBundleIDs = []
                 self.elevatedPID = nil
                 self.elevatedLogPath = nil
+                self.xrayLogPath = nil
             }
             if !cleanupErrors.isEmpty {
                 throw SingboxRuntimeError.cleanupFailed(reason: cleanupErrors.joined(separator: "\n"))
@@ -541,6 +557,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.process = nil
             self.elevatedPID = nil
             self.elevatedLogPath = nil
+            self.xrayLogPath = nil
             self.connecting = false
             self.proxiedAppBundleIDs = []
             self.unsupportedPerAppBundleIDs = []
@@ -627,6 +644,19 @@ public final class SingboxRuntime: @unchecked Sendable {
             if outputLog.count > 500 {
                 outputLog.removeFirst(outputLog.count - 500)
             }
+        }
+    }
+
+    private func appendLogData(_ data: Data, to path: String) {
+        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) else {
+            return
+        }
+        defer { try? handle.close() }
+        do {
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+        } catch {
+            return
         }
     }
 
