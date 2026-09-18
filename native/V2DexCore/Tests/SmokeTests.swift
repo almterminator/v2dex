@@ -69,6 +69,39 @@ final class SmokeTests: XCTestCase {
         XCTAssertNotNil(proxy["domain_resolver"])
     }
 
+    func testFullTunConfigDoesNotEnableSystemProxy() throws {
+        let node = ProxyNode(
+            id: "1",
+            name: "Node",
+            protocolType: "vless",
+            server: "example.invalid",
+            port: 443,
+            security: "tls",
+            transport: "ws",
+            sni: nil,
+            path: "/"
+        )
+
+        let data = try SingboxConfigBuilder.build(
+            node: node,
+            mode: .full,
+            appRules: [],
+            forceTun: true,
+            setSystemProxy: false
+        )
+
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let inbounds = try XCTUnwrap(json["inbounds"] as? [[String: Any]])
+        let route = try XCTUnwrap(json["route"] as? [String: Any])
+        let tunInbound = try XCTUnwrap(inbounds.first { $0["type"] as? String == "tun" })
+        let mixedInbound = try XCTUnwrap(inbounds.first { $0["tag"] as? String == "mixed-in" })
+
+        XCTAssertEqual(route["final"] as? String, "proxy")
+        XCTAssertEqual(tunInbound["auto_route"] as? Bool, true)
+        XCTAssertEqual(tunInbound["strict_route"] as? Bool, true)
+        XCTAssertEqual(mixedInbound["set_system_proxy"] as? Bool, false)
+    }
+
     func testPerAppConfigKeepsLocalProxyInboundOnProxyOutbound() throws {
         let node = ProxyNode(
             id: "1",

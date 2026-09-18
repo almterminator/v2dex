@@ -626,6 +626,19 @@ struct DashboardView: View {
             Divider()
                 .overlay(Color.white.opacity(0.14))
 
+            Toggle(isOn: fullSystemTunnelBinding) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Full System Tunnel")
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("TUN mode · no Wi-Fi proxy")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(Theme.currentAccent(store))
+
             Toggle(isOn: routerSocksModeBinding) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Router SOCKS")
@@ -693,6 +706,13 @@ struct DashboardView: View {
         Binding(
             get: { store.routerSocksModeEnabled },
             set: { store.setRouterSocksModeEnabled($0) }
+        )
+    }
+
+    private var fullSystemTunnelBinding: Binding<Bool> {
+        Binding(
+            get: { store.fullSystemTunnelEnabled },
+            set: { store.setFullSystemTunnelEnabled($0) }
         )
     }
 

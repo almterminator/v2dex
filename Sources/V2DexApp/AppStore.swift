@@ -23,6 +23,7 @@ final class AppStore: ObservableObject {
     @Published var profilePingStates: [String: ProfilePingState] = [:]
     @Published var profileCountryCodes: [String: String] = [:]
     @Published var routerSocksModeEnabled = false
+    @Published var fullSystemTunnelEnabled = false
     @Published var checkingOpenAIConnectivity = false
     @Published var openAIConnectivityLine = "OpenAI not checked"
     private var routerSocksProxyActive = false
@@ -57,6 +58,7 @@ final class AppStore: ObservableObject {
         var collapsedSubscriptionIDs: [String]?
         var profileCountryCodes: [String: String]?
         var routerSocksModeEnabled: Bool?
+        var fullSystemTunnelEnabled: Bool?
     }
 
     var activeProfile: ProfileSummary? {
@@ -108,19 +110,38 @@ final class AppStore: ObservableObject {
 
         Task {
             do {
-                let configData = try XrayConfigBuilder.build(node: node)
-                let snapshot = try SingboxRuntime.shared.startXray(
-                    configData: configData,
-                    mode: .full,
-                    socksOnlySystemProxy: node.protocolType == "socks5"
-                )
+                let snapshot: TunnelStatusSnapshot
+                if fullSystemTunnelEnabled {
+                    let configData = try SingboxConfigBuilder.build(
+                        node: node,
+                        mode: .full,
+                        appRules: [],
+                        forceTun: true,
+                        setSystemProxy: false
+                    )
+                    snapshot = try SingboxRuntime.shared.start(
+                        configData: configData,
+                        mode: .full,
+                        appRules: [],
+                        manageSystemProxy: false
+                    )
+                } else {
+                    let configData = try XrayConfigBuilder.build(node: node)
+                    snapshot = try SingboxRuntime.shared.startXray(
+                        configData: configData,
+                        mode: .full,
+                        socksOnlySystemProxy: node.protocolType == "socks5"
+                    )
+                }
 
                 await MainActor.run {
                     tunnel.connecting = snapshot.connecting
                     tunnel.connected = snapshot.connected
                     tunnel.lastConnectedAt = snapshot.lastConnectedAt ?? Date()
                     tunnel.lastError = nil
-                    statusLine = "Connected locally via \(node.name). Checking exit location..."
+                    statusLine = fullSystemTunnelEnabled
+                        ? "Full system tunnel connected via \(node.name). Checking exit location..."
+                        : "Connected locally via \(node.name). Checking exit location..."
                 }
 
                 await refreshExitLocation(afterConnectingTo: node)
@@ -195,7 +216,22 @@ final class AppStore: ObservableObject {
 
     func setRouterSocksModeEnabled(_ enabled: Bool) {
         routerSocksModeEnabled = enabled
+        if enabled {
+            fullSystemTunnelEnabled = false
+        }
         statusLine = enabled ? "Router SOCKS mode enabled" : "Router SOCKS mode disabled"
+        persistState()
+    }
+
+    func setFullSystemTunnelEnabled(_ enabled: Bool) {
+        fullSystemTunnelEnabled = enabled
+        if enabled {
+            routerSocksModeEnabled = false
+        }
+        statusLine = enabled
+            ? "Full system tunnel enabled. Wi-Fi proxy will stay off."
+            : "Full system tunnel disabled. Wi-Fi proxy mode restored."
+        refreshConfigPreview()
         persistState()
     }
 
@@ -595,7 +631,15 @@ final class AppStore: ObservableObject {
         }
 
         do {
-            let data = try XrayConfigBuilder.build(node: node)
+            let data = fullSystemTunnelEnabled
+                ? try SingboxConfigBuilder.build(
+                    node: node,
+                    mode: .full,
+                    appRules: [],
+                    forceTun: true,
+                    setSystemProxy: false
+                )
+                : try XrayConfigBuilder.build(node: node)
             configPreview = String(decoding: data, as: UTF8.self)
         } catch {
             configPreview = "{\n  \"error\": \"\(error.localizedDescription)\"\n}"
@@ -898,7 +942,8 @@ final class AppStore: ObservableObject {
             mode: tunnel.mode,
             collapsedSubscriptionIDs: Array(collapsedSubscriptionIDs),
             profileCountryCodes: profileCountryCodes,
-            routerSocksModeEnabled: routerSocksModeEnabled
+            routerSocksModeEnabled: routerSocksModeEnabled,
+            fullSystemTunnelEnabled: fullSystemTunnelEnabled
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -957,6 +1002,10 @@ final class AppStore: ObservableObject {
         collapsedSubscriptionIDs = Set(state.collapsedSubscriptionIDs ?? [])
         profileCountryCodes = state.profileCountryCodes ?? [:]
         routerSocksModeEnabled = state.routerSocksModeEnabled ?? false
+        fullSystemTunnelEnabled = state.fullSystemTunnelEnabled ?? false
+        if routerSocksModeEnabled && fullSystemTunnelEnabled {
+            routerSocksModeEnabled = false
+        }
         statusLine = "Loaded saved config"
     }
 

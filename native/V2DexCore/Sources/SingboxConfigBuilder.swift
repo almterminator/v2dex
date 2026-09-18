@@ -12,10 +12,17 @@ public enum SingboxConfigBuilder {
     public static let localProxyPort = localSocksProxyPort
     public static let tunAddress = "172.19.0.1/30"
 
-    public static func build(node: ProxyNode, mode: TunnelMode, appRules: [AppRouteRule]) throws -> Data {
-        let useTun = requiresTun(appRules: appRules)
+    public static func build(
+        node: ProxyNode,
+        mode: TunnelMode,
+        appRules: [AppRouteRule],
+        forceTun: Bool = false,
+        setSystemProxy: Bool? = nil
+    ) throws -> Data {
+        let useTun = forceTun || requiresTun(appRules: appRules)
         let routeRules = buildRouteRules(mode: mode, appRules: appRules, useTun: useTun)
-        let finalOutbound = useTun ? "direct" : "proxy"
+        let finalOutbound = forceTun ? "proxy" : (useTun ? "direct" : "proxy")
+        let shouldSetSystemProxy = setSystemProxy ?? (mode == .full && !forceTun)
 
         let config: [String: Any] = [
             "log": [
@@ -31,7 +38,7 @@ public enum SingboxConfigBuilder {
                 "final": "local",
                 "strategy": "prefer_ipv4"
             ],
-            "inbounds": inbounds(useTun: useTun, setSystemProxy: mode == .full),
+            "inbounds": inbounds(useTun: useTun, setSystemProxy: shouldSetSystemProxy),
             "outbounds": [
                 outboundDictionary(for: node),
                 [

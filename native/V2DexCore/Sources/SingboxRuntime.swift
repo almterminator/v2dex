@@ -90,7 +90,8 @@ public final class SingboxRuntime: @unchecked Sendable {
         configData: Data,
         mode: TunnelMode,
         appRules: [AppRouteRule] = [],
-        binaryPath explicitBinaryPath: String? = nil
+        binaryPath explicitBinaryPath: String? = nil,
+        manageSystemProxy: Bool = true
     ) throws -> TunnelStatusSnapshot {
         guard let resolvedBinaryPath = resolveBinaryPath(explicitPath: explicitBinaryPath) else {
             throw SingboxRuntimeError.binaryNotFound(environmentKey: Self.environmentBinaryKey)
@@ -127,13 +128,15 @@ public final class SingboxRuntime: @unchecked Sendable {
                     self.elevatedPID = pid
                 }
                 try waitForProxyReady(elevatedPID: pid, logPath: elevatedLogPath)
-                try enableManagedSystemProxyIfNeeded(mode: mode)
+                if manageSystemProxy {
+                    try enableManagedSystemProxyIfNeeded(mode: mode)
+                }
                 stateQueue.sync {
                     self.process = nil
                     self.elevatedPID = pid
                     self.connecting = false
                     self.lastConnectedAt = Date()
-                    self.backend = mode == .full ? .systemProxy : .appProxy
+                    self.backend = mode == .full ? (manageSystemProxy ? .systemProxy : .appProxy) : .appProxy
                 }
                 return statusSnapshot()
             } catch {
@@ -189,7 +192,9 @@ public final class SingboxRuntime: @unchecked Sendable {
         do {
             try process.run()
             try waitForProxyReady(process: process)
-            try enableManagedSystemProxyIfNeeded(mode: mode)
+            if manageSystemProxy {
+                try enableManagedSystemProxyIfNeeded(mode: mode)
+            }
             stateQueue.sync {
                 self.proxiedAppBundleIDs = []
                 self.unsupportedPerAppBundleIDs = []
@@ -198,7 +203,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.process = process
                 self.connecting = false
                 self.lastConnectedAt = Date()
-                self.backend = mode == .full ? .systemProxy : .appProxy
+                self.backend = mode == .full ? (manageSystemProxy ? .systemProxy : .appProxy) : .appProxy
             }
             return statusSnapshot()
         } catch {
