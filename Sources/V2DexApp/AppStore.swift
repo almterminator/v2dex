@@ -33,6 +33,8 @@ final class AppStore: ObservableObject {
     private var routerSocksProxyActive = false
 
     nonisolated private static let routerSocksPort = 43_080
+    nonisolated private static let fullTunnelHTTPPort = 2_091
+    nonisolated private static let fullTunnelSocksPort = 2_092
     nonisolated private static let pingBatchSize = 3
     nonisolated private static let proxyPingTimeout: TimeInterval = 2.5
     nonisolated private static let connectedProbeURLs = [
@@ -116,12 +118,19 @@ final class AppStore: ObservableObject {
             do {
                 let snapshot: TunnelStatusSnapshot
                 if fullSystemTunnelEnabled {
-                    let xrayConfigData = try XrayConfigBuilder.build(node: node)
-                    let tunConfigData = try SingboxConfigBuilder.buildTunToLocalSocks()
+                    let xrayConfigData = try XrayConfigBuilder.build(
+                        node: node,
+                        httpPort: Self.fullTunnelHTTPPort,
+                        socksPort: Self.fullTunnelSocksPort
+                    )
+                    let tunConfigData = try SingboxConfigBuilder.buildTunToLocalSocks(
+                        socksPort: Self.fullTunnelSocksPort
+                    )
                     snapshot = try SingboxRuntime.shared.startXrayBackedTun(
                         xrayConfigData: xrayConfigData,
                         tunConfigData: tunConfigData,
-                        mode: .full
+                        mode: .full,
+                        localSocksPort: Self.fullTunnelSocksPort
                     )
                 } else {
                     let configData = try XrayConfigBuilder.build(node: node)
@@ -630,7 +639,7 @@ final class AppStore: ObservableObject {
 
         do {
             let data = fullSystemTunnelEnabled
-                ? try SingboxConfigBuilder.buildTunToLocalSocks()
+                ? try SingboxConfigBuilder.buildTunToLocalSocks(socksPort: Self.fullTunnelSocksPort)
                 : try XrayConfigBuilder.build(node: node)
             configPreview = String(decoding: data, as: UTF8.self)
         } catch {

@@ -29,6 +29,7 @@ public final class SingboxRuntime: @unchecked Sendable {
     private var outputLog: [String] = []
     private var elevatedPID: Int32?
     private var elevatedLogPath: String?
+    private var activeProxyPort = SingboxConfigBuilder.localProxyPort
     private var proxiedAppBundleIDs: [String] = []
     private var unsupportedPerAppBundleIDs: [String] = []
     private var proxyController = MacSystemProxyController()
@@ -112,6 +113,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.lastError = nil
             self.binaryPath = resolvedBinaryPath
             self.activeConfigPath = configPath
+            self.activeProxyPort = SingboxConfigBuilder.localProxyPort
             self.elevatedLogPath = usesElevatedTun ? elevatedLogPath : nil
             self.proxiedAppBundleIDs = []
             self.unsupportedPerAppBundleIDs = []
@@ -239,6 +241,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.lastError = nil
             self.binaryPath = resolvedBinaryPath
             self.activeConfigPath = configPath
+            self.activeProxyPort = XrayConfigBuilder.localSocksProxyPort
             self.elevatedLogPath = nil
             self.elevatedPID = nil
             self.proxiedAppBundleIDs = []
@@ -315,6 +318,7 @@ public final class SingboxRuntime: @unchecked Sendable {
         xrayConfigData: Data,
         tunConfigData: Data,
         mode: TunnelMode,
+        localSocksPort: Int = XrayConfigBuilder.localSocksProxyPort,
         xrayBinaryPath explicitXrayBinaryPath: String? = nil,
         singboxBinaryPath explicitSingboxBinaryPath: String? = nil
     ) throws -> TunnelStatusSnapshot {
@@ -340,6 +344,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.lastError = nil
             self.binaryPath = resolvedXrayBinaryPath
             self.activeConfigPath = xrayConfigPath
+            self.activeProxyPort = localSocksPort
             self.elevatedLogPath = elevatedLogPath
             self.elevatedPID = nil
             self.proxiedAppBundleIDs = []
@@ -390,9 +395,8 @@ public final class SingboxRuntime: @unchecked Sendable {
         }
 
         do {
-            try cleanupStaleSingboxProcesses(binaryPath: resolvedSingboxBinaryPath)
             try process.run()
-            try waitForProxyReady(process: process)
+            try waitForProxyReady(process: process, port: localSocksPort)
             let pid = try launchElevatedSingbox(
                 binaryPath: resolvedSingboxBinaryPath,
                 configPath: tunConfigPath,
@@ -577,7 +581,7 @@ public final class SingboxRuntime: @unchecked Sendable {
     public func statusSnapshot() -> TunnelStatusSnapshot {
         stateQueue.sync {
             let runtimeAlive = process?.isRunning == true || elevatedPID.map(isPIDRunning(_:)) == true
-            let proxyReachable = runtimeAlive && isLocalProxyReachable()
+            let proxyReachable = runtimeAlive && isLocalProxyReachable(port: activeProxyPort)
             return TunnelStatusSnapshot(
                 connected: proxyReachable,
                 connecting: connecting,
@@ -588,7 +592,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 binaryPath: binaryPath,
                 activeConfigPath: activeConfigPath,
                 proxyHost: SingboxConfigBuilder.localProxyHost,
-                proxyPort: SingboxConfigBuilder.localProxyPort
+                proxyPort: activeProxyPort
             )
         }
     }
@@ -777,7 +781,11 @@ public final class SingboxRuntime: @unchecked Sendable {
             .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
-    private func waitForProxyReady(process: Process, timeout: TimeInterval = 6) throws {
+    private func waitForProxyReady(
+        process: Process,
+        timeout: TimeInterval = 6,
+        port: Int = SingboxConfigBuilder.localProxyPort
+    ) throws {
         let deadline = Date().addingTimeInterval(timeout)
 
         while Date() < deadline {
@@ -788,7 +796,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 )
             }
 
-            if isLocalProxyReachable() {
+            if isLocalProxyReachable(port: port) {
                 return
             }
 
@@ -797,7 +805,7 @@ public final class SingboxRuntime: @unchecked Sendable {
 
         let logTail = recentOutput(limit: 20).joined(separator: "\n")
         throw SingboxRuntimeError.proxyStartupFailed(
-            reason: logTail.isEmpty ? "Timed out waiting for the local proxy listener on 127.0.0.1:\(SingboxConfigBuilder.localProxyPort)." : logTail
+            reason: logTail.isEmpty ? "Timed out waiting for the local proxy listener on 127.0.0.1:\(port)." : logTail
         )
     }
 
@@ -812,7 +820,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 )
             }
 
-            if isLocalProxyReachable() {
+            if isLocalProxyReachable(port: SingboxConfigBuilder.localProxyPort) {
                 appendOutput(readLogTail(path: logPath))
                 return
             }
@@ -859,7 +867,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             .joined(separator: "\n")
     }
 
-    private func isLocalProxyReachable() -> Bool {
+    private func isLocalProxyReachable(port: Int = SingboxConfigBuilder.localProxyPort) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/nc")
         process.arguments = [
@@ -867,7 +875,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             "-G",
             "1",
             SingboxConfigBuilder.loopbackProxyHost,
-            String(SingboxConfigBuilder.localProxyPort)
+            String(port)
         ]
 
         do {
