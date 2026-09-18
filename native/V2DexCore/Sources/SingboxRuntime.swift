@@ -30,6 +30,7 @@ public final class SingboxRuntime: @unchecked Sendable {
     private var elevatedPID: Int32?
     private var elevatedLogPath: String?
     private var xrayLogPath: String?
+    private var stopping = false
     private var activeProxyPort = SingboxConfigBuilder.localProxyPort
     private var proxiedAppBundleIDs: [String] = []
     private var unsupportedPerAppBundleIDs: [String] = []
@@ -109,6 +110,7 @@ public final class SingboxRuntime: @unchecked Sendable {
 
         stateQueue.sync {
             self.connecting = true
+            self.stopping = false
             self.mode = mode
             self.runtimeName = "sing-box"
             self.lastError = nil
@@ -238,6 +240,7 @@ public final class SingboxRuntime: @unchecked Sendable {
         let configPath = try writeConfig(configData, runtimeName: "xray")
         stateQueue.sync {
             self.connecting = true
+            self.stopping = false
             self.mode = mode
             self.runtimeName = "xray"
             self.lastError = nil
@@ -346,6 +349,7 @@ public final class SingboxRuntime: @unchecked Sendable {
 
         stateQueue.sync {
             self.connecting = true
+            self.stopping = false
             self.mode = mode
             self.runtimeName = "xray+sing-box"
             self.lastError = nil
@@ -382,17 +386,22 @@ public final class SingboxRuntime: @unchecked Sendable {
 
         process.terminationHandler = { [weak self] process in
             guard let self else { return }
+            let intentionalStop = stateQueue.sync { self.stopping }
             var cleanupErrors: [String] = []
-            do {
-                try killElevatedSingbox()
-            } catch {
-                cleanupErrors.append(error.localizedDescription)
+            if !intentionalStop {
+                do {
+                    try killElevatedSingbox()
+                } catch {
+                    cleanupErrors.append(error.localizedDescription)
+                }
             }
             cleanupManagedSystemProxySettings(errors: &cleanupErrors)
             stateQueue.sync {
                 self.process = nil
-                self.elevatedPID = nil
-                self.elevatedLogPath = nil
+                if !intentionalStop {
+                    self.elevatedPID = nil
+                    self.elevatedLogPath = nil
+                }
                 self.connecting = false
                 if process.terminationStatus != 0 {
                     let logTail = self.readLogTail(path: xrayLogPath, lineLimit: 30)
@@ -501,7 +510,8 @@ public final class SingboxRuntime: @unchecked Sendable {
 
     private func stopIfNeeded(cleanupStaleProcesses: Bool) throws {
         let (process, elevatedPID, storedBinaryPath) = stateQueue.sync {
-            (self.process, self.elevatedPID, self.binaryPath)
+            self.stopping = true
+            return (self.process, self.elevatedPID, self.binaryPath)
         }
         let resolvedBinaryPath = storedBinaryPath ?? resolveBinaryPath()
         var cleanupErrors: [String] = []
@@ -530,6 +540,7 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.elevatedPID = nil
                 self.elevatedLogPath = nil
                 self.xrayLogPath = nil
+                self.stopping = false
             }
             if !cleanupErrors.isEmpty {
                 throw SingboxRuntimeError.cleanupFailed(reason: cleanupErrors.joined(separator: "\n"))
@@ -538,9 +549,9 @@ public final class SingboxRuntime: @unchecked Sendable {
         }
 
         process.terminate()
-        if elevatedPID != nil {
+        if let elevatedPID {
             do {
-                try killElevatedSingbox()
+                try killElevatedSingbox(pid: elevatedPID)
             } catch {
                 cleanupErrors.append(error.localizedDescription)
             }
@@ -559,6 +570,7 @@ public final class SingboxRuntime: @unchecked Sendable {
             self.elevatedLogPath = nil
             self.xrayLogPath = nil
             self.connecting = false
+            self.stopping = false
             self.proxiedAppBundleIDs = []
             self.unsupportedPerAppBundleIDs = []
         }
@@ -705,8 +717,8 @@ public final class SingboxRuntime: @unchecked Sendable {
         return pid
     }
 
-    private func killElevatedSingbox() throws {
-        guard let pid = stateQueue.sync(execute: { self.elevatedPID }) else {
+    private func killElevatedSingbox(pid explicitPID: Int32? = nil) throws {
+        guard let pid = explicitPID ?? stateQueue.sync(execute: { self.elevatedPID }) else {
             return
         }
 
@@ -892,7 +904,13 @@ public final class SingboxRuntime: @unchecked Sendable {
     }
 
     private func isPIDRunning(_ pid: Int32) -> Bool {
-        kill(pid, 0) == 0
+        if kill(pid, 0) == 0 {
+            return true
+        }
+
+        // Elevated TUN processes run as root. For an unprivileged app, EPERM
+        // means the process exists but cannot be signalled, not that it died.
+        return errno == EPERM
     }
 
     private func readLogTail(path: String, lineLimit: Int = 40) -> String {
