@@ -103,9 +103,14 @@ final class SmokeTests: XCTestCase {
     }
 
     func testXrayBackedTunRoutesToLocalSocksWithoutSystemProxy() throws {
-        let data = try SingboxConfigBuilder.buildTunToLocalSocks(directServer: "104.17.196.239")
+        let data = try SingboxConfigBuilder.buildTunToLocalSocks(
+            directServer: "104.17.196.239",
+            systemDNSServer: "10.22.19.75"
+        )
 
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let dns = try XCTUnwrap(json["dns"] as? [String: Any])
+        let dnsServers = try XCTUnwrap(dns["servers"] as? [[String: Any]])
         let inbounds = try XCTUnwrap(json["inbounds"] as? [[String: Any]])
         let outbounds = try XCTUnwrap(json["outbounds"] as? [[String: Any]])
         let route = try XCTUnwrap(json["route"] as? [String: Any])
@@ -117,11 +122,16 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(route["final"] as? String, "proxy")
         XCTAssertEqual(tunInbound["auto_route"] as? Bool, true)
         XCTAssertEqual(tunInbound["route_exclude_address"] as? [String], ["104.17.196.239/32"])
+        XCTAssertTrue((tunInbound["route_address"] as? [String])?.contains("10.22.19.75/32") == true)
+        XCTAssertEqual(dns["final"] as? String, "remote")
+        XCTAssertEqual(dnsServers.first?["type"] as? String, "https")
+        XCTAssertEqual(dnsServers.first?["detour"] as? String, "proxy")
         XCTAssertEqual(proxyOutbound["type"] as? String, "socks")
         XCTAssertEqual(proxyOutbound["server"] as? String, "127.0.0.1")
         XCTAssertEqual(proxyOutbound["server_port"] as? Int, XrayConfigBuilder.localSocksProxyPort)
         XCTAssertTrue(rules.contains { ($0["process_name"] as? [String])?.contains("xray") == true && $0["outbound"] as? String == "direct" })
         XCTAssertTrue(rules.contains { ($0["ip_cidr"] as? [String])?.contains("104.17.196.239/32") == true && $0["outbound"] as? String == "direct" })
+        XCTAssertTrue(rules.contains { $0["protocol"] as? String == "dns" && $0["action"] as? String == "hijack-dns" })
     }
 
     func testPerAppConfigKeepsLocalProxyInboundOnProxyOutbound() throws {

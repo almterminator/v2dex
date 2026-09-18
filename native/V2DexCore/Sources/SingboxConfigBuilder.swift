@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import SystemConfiguration
 
 public enum SingboxConfigBuilder {
     public static let localProxyListenHost = "0.0.0.0"
@@ -60,8 +61,17 @@ public enum SingboxConfigBuilder {
 
     public static func buildTunToLocalSocks(
         socksPort: Int = XrayConfigBuilder.localSocksProxyPort,
-        directServer: String? = nil
+        directServer: String? = nil,
+        systemDNSServer: String? = nil
     ) throws -> Data {
+        var routeAddresses = [
+            "0.0.0.0/1",
+            "128.0.0.0/1"
+        ]
+        if let dnsServer = systemDNSServer ?? primarySystemIPv4DNSServer() {
+            routeAddresses.append("\(dnsServer)/32")
+        }
+
         var tunInbound: [String: Any] = [
             "type": "tun",
             "tag": "tun-in",
@@ -70,9 +80,19 @@ public enum SingboxConfigBuilder {
             ],
             "auto_route": true,
             "strict_route": true,
-            "stack": "system"
+            "stack": "system",
+            "route_address": routeAddresses
         ]
         var routeRules: [[String: Any]] = [
+            [
+                "protocol": "dns",
+                "action": "hijack-dns"
+            ],
+            [
+                "network": "udp",
+                "port": 443,
+                "action": "reject"
+            ],
             [
                 "process_name": [
                     "xray"
@@ -122,12 +142,20 @@ public enum SingboxConfigBuilder {
             "dns": [
                 "servers": [
                     [
-                        "tag": "local",
-                        "type": "local"
+                        "tag": "remote",
+                        "type": "https",
+                        "server": "1.1.1.1",
+                        "server_port": 443,
+                        "path": "/dns-query",
+                        "tls": [
+                            "enabled": true,
+                            "server_name": "cloudflare-dns.com"
+                        ],
+                        "detour": "proxy"
                     ]
                 ],
-                "final": "local",
-                "strategy": "prefer_ipv4"
+                "final": "remote",
+                "strategy": "ipv4_only"
             ],
             "inbounds": [
                 tunInbound
@@ -143,12 +171,18 @@ public enum SingboxConfigBuilder {
                 [
                     "tag": "direct",
                     "type": "direct",
-                    "domain_resolver": preferredDomainResolver()
+                    "domain_resolver": [
+                        "server": "remote",
+                        "strategy": "ipv4_only"
+                    ]
                 ]
             ],
             "route": [
                 "auto_detect_interface": true,
-                "default_domain_resolver": preferredDomainResolver(),
+                "default_domain_resolver": [
+                    "server": "remote",
+                    "strategy": "ipv4_only"
+                ],
                 "final": "proxy",
                 "rules": routeRules
             ]
@@ -259,6 +293,21 @@ public enum SingboxConfigBuilder {
     private static func isIPv4Address(_ value: String) -> Bool {
         let parts = value.split(separator: ".").compactMap { Int($0) }
         return parts.count == 4 && parts.allSatisfy { (0...255).contains($0) }
+    }
+
+    private static func primarySystemIPv4DNSServer() -> String? {
+        guard let dnsState = SCDynamicStoreCopyValue(
+            nil,
+            "State:/Network/Global/DNS" as CFString
+        ) as? [String: Any],
+        let servers = dnsState[kSCPropNetDNSServerAddresses as String] as? [String]
+        else {
+            return nil
+        }
+
+        return servers.first { server in
+            isIPv4Address(server) && !server.hasPrefix("127.")
+        }
     }
 
     private static func buildRouteRules(mode: TunnelMode, appRules: [AppRouteRule], useTun: Bool) -> [[String: Any]] {
