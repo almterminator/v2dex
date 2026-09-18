@@ -3,10 +3,6 @@ import V2DexCore
 
 struct DashboardView: View {
     @EnvironmentObject private var store: AppStore
-    @State private var importText = ""
-    @State private var showingImportPopup = false
-    @State private var showingProxyPopup = false
-    @State private var savedConfigsCollapsed = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -21,12 +17,12 @@ struct DashboardView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
         }
-        .sheet(isPresented: $showingImportPopup) {
+        .sheet(isPresented: importPopupBinding) {
             importSheet
                 .frame(width: 440)
                 .presentationBackground(Theme.panel)
         }
-        .popover(isPresented: $showingProxyPopup, arrowEdge: .top) {
+        .popover(isPresented: proxyPopupBinding, arrowEdge: .top) {
             proxyPopover
         }
     }
@@ -109,10 +105,10 @@ struct DashboardView: View {
 
             HStack(spacing: 8) {
                 headerIconButton(icon: "globe", iconSize: 18, help: "Connection") {
-                    showingProxyPopup = true
+                    store.showingProxyPopup = true
                 }
                 headerIconButton(icon: "plus", iconSize: 22, help: "Import config") {
-                    showingImportPopup = true
+                    store.showingImportPopup = true
                 }
             }
             .padding(.top, 1)
@@ -126,14 +122,14 @@ struct DashboardView: View {
                 title: "Saved Configs",
                 subtitle: nil,
                 count: savedProfiles.count,
-                collapsed: savedConfigsCollapsed,
+                collapsed: store.savedConfigsCollapsed,
                 primaryIcon: "speedometer",
                 secondaryIcon: nil,
                 primaryLoading: store.pingingAll,
                 secondaryLoading: false,
                 onToggle: {
                     withAnimation(.spring(response: 0.26, dampingFraction: 0.86)) {
-                        savedConfigsCollapsed.toggle()
+                        store.savedConfigsCollapsed.toggle()
                     }
                 },
                 onPrimary: {
@@ -142,7 +138,7 @@ struct DashboardView: View {
                 onSecondary: nil
             )
 
-            if !savedConfigsCollapsed {
+            if !store.savedConfigsCollapsed {
                 if savedProfiles.isEmpty {
                     emptyProfiles
                 } else {
@@ -555,7 +551,7 @@ struct DashboardView: View {
                 .font(.system(size: 24, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
 
-            TextEditor(text: $importText)
+            TextEditor(text: importTextBinding)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white)
                 .scrollContentBackground(.hidden)
@@ -565,7 +561,7 @@ struct DashboardView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
                 .overlay(alignment: .topLeading) {
-                    if importText.isEmpty {
+                    if store.importText.isEmpty {
                         Text("VLESS URI or subscription URL")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(.white.opacity(0.34))
@@ -578,7 +574,7 @@ struct DashboardView: View {
             HStack(spacing: 12) {
                 Button {
                     store.importFromClipboard()
-                    showingImportPopup = false
+                    store.showingImportPopup = false
                 } label: {
                     Label("Clipboard", systemImage: "doc.on.clipboard")
                 }
@@ -587,14 +583,14 @@ struct DashboardView: View {
                 Spacer()
 
                 Button("Cancel") {
-                    showingImportPopup = false
+                    store.showingImportPopup = false
                 }
                 .buttonStyle(SecondaryButtonStyle())
 
                 Button {
-                    store.importSubscriptionLink(importText)
-                    importText = ""
-                    showingImportPopup = false
+                    store.importSubscriptionLink(store.importText)
+                    store.importText = ""
+                    store.showingImportPopup = false
                 } label: {
                     Label("Import", systemImage: "square.and.arrow.down")
                 }
@@ -613,7 +609,7 @@ struct DashboardView: View {
                     .foregroundStyle(.white)
                 Spacer()
                 Button {
-                    showingProxyPopup = false
+                    store.showingProxyPopup = false
                 } label: {
                     Image(systemName: "xmark")
                 }
@@ -713,6 +709,27 @@ struct DashboardView: View {
         Binding(
             get: { store.fullSystemTunnelEnabled },
             set: { store.setFullSystemTunnelEnabled($0) }
+        )
+    }
+
+    private var importPopupBinding: Binding<Bool> {
+        Binding(
+            get: { store.showingImportPopup },
+            set: { store.showingImportPopup = $0 }
+        )
+    }
+
+    private var proxyPopupBinding: Binding<Bool> {
+        Binding(
+            get: { store.showingProxyPopup },
+            set: { store.showingProxyPopup = $0 }
+        )
+    }
+
+    private var importTextBinding: Binding<String> {
+        Binding(
+            get: { store.importText },
+            set: { store.importText = $0 }
         )
     }
 

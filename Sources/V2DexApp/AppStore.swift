@@ -11,6 +11,10 @@ final class AppStore: ObservableObject {
     @Published var subscriptions: [SubscriptionSummary] = []
     @Published var appRules: [AppRuleViewModel] = DemoData.appRules
     @Published var searchText = ""
+    @Published var importText = ""
+    @Published var showingImportPopup = false
+    @Published var showingProxyPopup = false
+    @Published var savedConfigsCollapsed = false
     @Published var statusLine = "Ready"
     @Published var configPreview = "{}"
     @Published var lastPingMs: Int?
