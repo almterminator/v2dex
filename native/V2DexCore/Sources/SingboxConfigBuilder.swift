@@ -58,7 +58,51 @@ public enum SingboxConfigBuilder {
         return try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
     }
 
-    public static func buildTunToLocalSocks(socksPort: Int = XrayConfigBuilder.localSocksProxyPort) throws -> Data {
+    public static func buildTunToLocalSocks(
+        socksPort: Int = XrayConfigBuilder.localSocksProxyPort,
+        directServer: String? = nil
+    ) throws -> Data {
+        var routeRules: [[String: Any]] = [
+            [
+                "process_name": [
+                    "xray"
+                ],
+                "action": "route",
+                "outbound": "direct"
+            ],
+            [
+                "ip_is_private": true,
+                "action": "route",
+                "outbound": "direct"
+            ]
+        ]
+
+        if let directServer, !directServer.isEmpty {
+            if isIPv4Address(directServer) {
+                routeRules.insert(
+                    [
+                        "ip_cidr": [
+                            "\(directServer)/32"
+                        ],
+                        "action": "route",
+                        "outbound": "direct"
+                    ],
+                    at: 0
+                )
+            } else {
+                routeRules.insert(
+                    [
+                        "domain": [
+                            directServer
+                        ],
+                        "action": "route",
+                        "outbound": "direct"
+                    ],
+                    at: 0
+                )
+            }
+        }
+
         let config: [String: Any] = [
             "log": [
                 "level": "warn"
@@ -103,13 +147,7 @@ public enum SingboxConfigBuilder {
                 "auto_detect_interface": true,
                 "default_domain_resolver": preferredDomainResolver(),
                 "final": "proxy",
-                "rules": [
-                    [
-                        "ip_is_private": true,
-                        "action": "route",
-                        "outbound": "direct"
-                    ]
-                ]
+                "rules": routeRules
             ]
         ]
 
@@ -213,6 +251,11 @@ public enum SingboxConfigBuilder {
         return parts[0] == 10
             || (parts[0] == 172 && (16...31).contains(parts[1]))
             || (parts[0] == 192 && parts[1] == 168)
+    }
+
+    private static func isIPv4Address(_ value: String) -> Bool {
+        let parts = value.split(separator: ".").compactMap { Int($0) }
+        return parts.count == 4 && parts.allSatisfy { (0...255).contains($0) }
     }
 
     private static func buildRouteRules(mode: TunnelMode, appRules: [AppRouteRule], useTun: Bool) -> [[String: Any]] {

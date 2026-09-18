@@ -103,12 +103,13 @@ final class SmokeTests: XCTestCase {
     }
 
     func testXrayBackedTunRoutesToLocalSocksWithoutSystemProxy() throws {
-        let data = try SingboxConfigBuilder.buildTunToLocalSocks()
+        let data = try SingboxConfigBuilder.buildTunToLocalSocks(directServer: "104.17.196.239")
 
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let inbounds = try XCTUnwrap(json["inbounds"] as? [[String: Any]])
         let outbounds = try XCTUnwrap(json["outbounds"] as? [[String: Any]])
         let route = try XCTUnwrap(json["route"] as? [String: Any])
+        let rules = try XCTUnwrap(route["rules"] as? [[String: Any]])
         let tunInbound = try XCTUnwrap(inbounds.first { $0["type"] as? String == "tun" })
         let proxyOutbound = try XCTUnwrap(outbounds.first { $0["tag"] as? String == "proxy" })
 
@@ -118,6 +119,8 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(proxyOutbound["type"] as? String, "socks")
         XCTAssertEqual(proxyOutbound["server"] as? String, "127.0.0.1")
         XCTAssertEqual(proxyOutbound["server_port"] as? Int, XrayConfigBuilder.localSocksProxyPort)
+        XCTAssertTrue(rules.contains { ($0["process_name"] as? [String])?.contains("xray") == true && $0["outbound"] as? String == "direct" })
+        XCTAssertTrue(rules.contains { ($0["ip_cidr"] as? [String])?.contains("104.17.196.239/32") == true && $0["outbound"] as? String == "direct" })
     }
 
     func testPerAppConfigKeepsLocalProxyInboundOnProxyOutbound() throws {

@@ -124,7 +124,8 @@ final class AppStore: ObservableObject {
                         socksPort: Self.fullTunnelSocksPort
                     )
                     let tunConfigData = try SingboxConfigBuilder.buildTunToLocalSocks(
-                        socksPort: Self.fullTunnelSocksPort
+                        socksPort: Self.fullTunnelSocksPort,
+                        directServer: node.server
                     )
                     snapshot = try SingboxRuntime.shared.startXrayBackedTun(
                         xrayConfigData: xrayConfigData,
@@ -639,7 +640,10 @@ final class AppStore: ObservableObject {
 
         do {
             let data = fullSystemTunnelEnabled
-                ? try SingboxConfigBuilder.buildTunToLocalSocks(socksPort: Self.fullTunnelSocksPort)
+                ? try SingboxConfigBuilder.buildTunToLocalSocks(
+                    socksPort: Self.fullTunnelSocksPort,
+                    directServer: node.server
+                )
                 : try XrayConfigBuilder.build(node: node)
             configPreview = String(decoding: data, as: UTF8.self)
         } catch {
