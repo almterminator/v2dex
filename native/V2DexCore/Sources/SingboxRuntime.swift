@@ -397,6 +397,9 @@ public final class SingboxRuntime: @unchecked Sendable {
         do {
             try process.run()
             try waitForProxyReady(process: process, port: localSocksPort)
+            stateQueue.sync {
+                self.process = process
+            }
             let pid = try launchElevatedSingbox(
                 binaryPath: resolvedSingboxBinaryPath,
                 configPath: tunConfigPath,
@@ -407,6 +410,13 @@ public final class SingboxRuntime: @unchecked Sendable {
                 self.elevatedPID = pid
             }
             try waitForElevatedRuntimeAlive(elevatedPID: pid, logPath: elevatedLogPath)
+            guard process.isRunning else {
+                let logTail = recentOutput(limit: 30).joined(separator: "\n")
+                try? killElevatedSingbox()
+                throw SingboxRuntimeError.proxyStartupFailed(
+                    reason: logTail.isEmpty ? "xray exited after TUN mode started." : logTail
+                )
+            }
             stateQueue.sync {
                 self.connecting = false
                 self.lastConnectedAt = Date()

@@ -152,7 +152,7 @@ final class AppStore: ObservableObject {
                         : "Connected locally via \(node.name). Checking exit location..."
                 }
 
-                await refreshExitLocation(afterConnectingTo: node)
+                await refreshExitLocation(afterConnectingTo: node, proxyPort: activeLocalProxyPort)
                 await runActivePing()
                 await refreshOpenAIConnectivity()
             } catch {
@@ -699,7 +699,7 @@ final class AppStore: ObservableObject {
         }
 
         do {
-            let result = try await Self.testOpenAIReachability()
+            let result = try await Self.testOpenAIReachability(proxyPort: activeLocalProxyPort)
             await MainActor.run {
                 checkingOpenAIConnectivity = false
                 openAIConnectivityLine = "OpenAI reachable in \(result.latencyMs) ms"
@@ -712,14 +712,14 @@ final class AppStore: ObservableObject {
         }
     }
 
-    private nonisolated static func testOpenAIReachability() async throws -> TunnelHTTPProbeResult {
+    private nonisolated static func testOpenAIReachability(proxyPort: Int) async throws -> TunnelHTTPProbeResult {
         var lastError: Error?
         for url in openAIProbeURLs {
             do {
                 return try await ConnectivityTester.testHTTPReachabilityViaLocalProxy(
                     url: url,
                     proxyHost: SingboxConfigBuilder.loopbackProxyHost,
-                    proxyPort: SingboxConfigBuilder.localProxyPort,
+                    proxyPort: proxyPort,
                     timeout: 5
                 )
             } catch {
@@ -731,9 +731,8 @@ final class AppStore: ObservableObject {
 
     private func measuredLatency(for node: ProxyNode, profileID: String?) async throws -> Int {
         if tunnel.connected,
-           profileID == nil || profileID == activeProfile?.id,
-           let proxyPort = SingboxConfigBuilder.localProxyPort as Int? {
-            _ = try await Self.measuredConnectedProxyLatency(proxyPort: proxyPort)
+           profileID == nil || profileID == activeProfile?.id {
+            _ = try await Self.measuredConnectedProxyLatency(proxyPort: activeLocalProxyPort)
             return try await Self.measuredEndpointLatency(for: node)
         }
 
@@ -853,9 +852,13 @@ final class AppStore: ObservableObject {
         return nil
     }
 
-    private func refreshExitLocation(afterConnectingTo node: ProxyNode) async {
+    private var activeLocalProxyPort: Int {
+        fullSystemTunnelEnabled ? Self.fullTunnelSocksPort : SingboxConfigBuilder.localProxyPort
+    }
+
+    private func refreshExitLocation(afterConnectingTo node: ProxyNode, proxyPort: Int) async {
         do {
-            let response = try await Self.fetchExitLocationPayload()
+            let response = try await Self.fetchExitLocationPayload(proxyPort: proxyPort)
             let location = parseLocationPayload(response)
             await MainActor.run {
                 tunnel.exitIP = location.ip
@@ -874,14 +877,14 @@ final class AppStore: ObservableObject {
         }
     }
 
-    private nonisolated static func fetchExitLocationPayload() async throws -> String {
+    private nonisolated static func fetchExitLocationPayload(proxyPort: Int) async throws -> String {
         var lastError: Error?
         for url in exitLookupURLs {
             do {
                 let response = try await ConnectivityTester.fetchTextViaLocalProxy(
                     url: url,
                     proxyHost: SingboxConfigBuilder.loopbackProxyHost,
-                    proxyPort: SingboxConfigBuilder.localProxyPort,
+                    proxyPort: proxyPort,
                     timeout: 4
                 )
                 if response.contains("country") || response.contains("country_code") || response.contains("countryCode") {
