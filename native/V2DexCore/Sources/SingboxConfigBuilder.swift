@@ -58,6 +58,64 @@ public enum SingboxConfigBuilder {
         return try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
     }
 
+    public static func buildTunToLocalSocks(socksPort: Int = XrayConfigBuilder.localSocksProxyPort) throws -> Data {
+        let config: [String: Any] = [
+            "log": [
+                "level": "warn"
+            ],
+            "dns": [
+                "servers": [
+                    [
+                        "tag": "local",
+                        "type": "local"
+                    ]
+                ],
+                "final": "local",
+                "strategy": "prefer_ipv4"
+            ],
+            "inbounds": [
+                [
+                    "type": "tun",
+                    "tag": "tun-in",
+                    "address": [
+                        tunAddress
+                    ],
+                    "auto_route": true,
+                    "strict_route": true,
+                    "stack": "system"
+                ]
+            ],
+            "outbounds": [
+                [
+                    "tag": "proxy",
+                    "type": "socks",
+                    "server": loopbackProxyHost,
+                    "server_port": socksPort,
+                    "version": "5"
+                ],
+                [
+                    "tag": "direct",
+                    "type": "direct",
+                    "domain_resolver": preferredDomainResolver()
+                ]
+            ],
+            "route": [
+                "auto_detect_interface": true,
+                "default_domain_resolver": preferredDomainResolver(),
+                "final": "proxy",
+                "rules": [
+                    [
+                        "ip_is_private": true,
+                        "action": "route",
+                        "outbound": "direct"
+                    ]
+                ]
+            ]
+        ]
+
+        return try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+    }
+
     public static func requiresTun(appRules: [AppRouteRule]) -> Bool {
         false
     }

@@ -102,6 +102,24 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(mixedInbound["set_system_proxy"] as? Bool, false)
     }
 
+    func testXrayBackedTunRoutesToLocalSocksWithoutSystemProxy() throws {
+        let data = try SingboxConfigBuilder.buildTunToLocalSocks()
+
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let inbounds = try XCTUnwrap(json["inbounds"] as? [[String: Any]])
+        let outbounds = try XCTUnwrap(json["outbounds"] as? [[String: Any]])
+        let route = try XCTUnwrap(json["route"] as? [String: Any])
+        let tunInbound = try XCTUnwrap(inbounds.first { $0["type"] as? String == "tun" })
+        let proxyOutbound = try XCTUnwrap(outbounds.first { $0["tag"] as? String == "proxy" })
+
+        XCTAssertEqual(inbounds.count, 1)
+        XCTAssertEqual(route["final"] as? String, "proxy")
+        XCTAssertEqual(tunInbound["auto_route"] as? Bool, true)
+        XCTAssertEqual(proxyOutbound["type"] as? String, "socks")
+        XCTAssertEqual(proxyOutbound["server"] as? String, "127.0.0.1")
+        XCTAssertEqual(proxyOutbound["server_port"] as? Int, XrayConfigBuilder.localSocksProxyPort)
+    }
+
     func testPerAppConfigKeepsLocalProxyInboundOnProxyOutbound() throws {
         let node = ProxyNode(
             id: "1",

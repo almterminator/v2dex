@@ -311,6 +311,121 @@ public final class SingboxRuntime: @unchecked Sendable {
         }
     }
 
+    public func startXrayBackedTun(
+        xrayConfigData: Data,
+        tunConfigData: Data,
+        mode: TunnelMode,
+        xrayBinaryPath explicitXrayBinaryPath: String? = nil,
+        singboxBinaryPath explicitSingboxBinaryPath: String? = nil
+    ) throws -> TunnelStatusSnapshot {
+        guard let resolvedXrayBinaryPath = resolveXrayBinaryPath(explicitPath: explicitXrayBinaryPath) else {
+            throw SingboxRuntimeError.binaryNotFound(environmentKey: Self.xrayEnvironmentBinaryKey)
+        }
+        guard let resolvedSingboxBinaryPath = resolveBinaryPath(explicitPath: explicitSingboxBinaryPath) else {
+            throw SingboxRuntimeError.binaryNotFound(environmentKey: Self.environmentBinaryKey)
+        }
+
+        try stopIfNeeded(cleanupStaleProcesses: false)
+
+        let xrayConfigPath = try writeConfig(xrayConfigData, runtimeName: "xray")
+        let tunConfigPath = try writeConfig(tunConfigData)
+        let elevatedLogPath = fileManager.temporaryDirectory
+            .appendingPathComponent("v2dex-sing-box-\(UUID().uuidString).log")
+            .path
+
+        stateQueue.sync {
+            self.connecting = true
+            self.mode = mode
+            self.runtimeName = "xray+sing-box"
+            self.lastError = nil
+            self.binaryPath = resolvedXrayBinaryPath
+            self.activeConfigPath = xrayConfigPath
+            self.elevatedLogPath = elevatedLogPath
+            self.elevatedPID = nil
+            self.proxiedAppBundleIDs = []
+            self.unsupportedPerAppBundleIDs = []
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: resolvedXrayBinaryPath)
+        process.arguments = ["run", "-config", xrayConfigPath]
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        let outputHandler: (FileHandle) -> Void = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let line = String(data: data, encoding: .utf8) else {
+                return
+            }
+            self?.appendOutput(line)
+        }
+
+        stdout.fileHandleForReading.readabilityHandler = outputHandler
+        stderr.fileHandleForReading.readabilityHandler = outputHandler
+
+        process.terminationHandler = { [weak self] process in
+            guard let self else { return }
+            var cleanupErrors: [String] = []
+            do {
+                try killElevatedSingbox()
+            } catch {
+                cleanupErrors.append(error.localizedDescription)
+            }
+            cleanupManagedSystemProxySettings(errors: &cleanupErrors)
+            stateQueue.sync {
+                self.process = nil
+                self.elevatedPID = nil
+                self.elevatedLogPath = nil
+                self.connecting = false
+                if process.terminationStatus != 0 {
+                    let message = "xray exited with code \(process.terminationStatus)"
+                    self.lastError = ([message] + cleanupErrors).joined(separator: "\n")
+                } else if !cleanupErrors.isEmpty {
+                    self.lastError = cleanupErrors.joined(separator: "\n")
+                }
+            }
+        }
+
+        do {
+            try cleanupStaleSingboxProcesses(binaryPath: resolvedSingboxBinaryPath)
+            try process.run()
+            try waitForProxyReady(process: process)
+            let pid = try launchElevatedSingbox(
+                binaryPath: resolvedSingboxBinaryPath,
+                configPath: tunConfigPath,
+                logPath: elevatedLogPath
+            )
+            stateQueue.sync {
+                self.process = process
+                self.elevatedPID = pid
+            }
+            try waitForElevatedRuntimeAlive(elevatedPID: pid, logPath: elevatedLogPath)
+            stateQueue.sync {
+                self.connecting = false
+                self.lastConnectedAt = Date()
+                self.backend = .appProxy
+            }
+            return statusSnapshot()
+        } catch {
+            process.terminate()
+            try? killElevatedSingbox()
+            var cleanupErrors: [String] = []
+            cleanupManagedSystemProxySettings(errors: &cleanupErrors)
+            stateQueue.sync {
+                self.connecting = false
+                self.process = nil
+                self.elevatedPID = nil
+                self.elevatedLogPath = nil
+                self.proxiedAppBundleIDs = []
+                self.lastError = ([error.localizedDescription] + cleanupErrors).joined(separator: "\n")
+            }
+            throw error
+        }
+    }
+
     public func stopIfNeeded() throws {
         try stopIfNeeded(cleanupStaleProcesses: false)
     }
@@ -393,6 +508,13 @@ public final class SingboxRuntime: @unchecked Sendable {
         }
 
         process.terminate()
+        if elevatedPID != nil {
+            do {
+                try killElevatedSingbox()
+            } catch {
+                cleanupErrors.append(error.localizedDescription)
+            }
+        }
         cleanupManagedSystemProxySettings(errors: &cleanupErrors)
         if cleanupStaleProcesses, let resolvedBinaryPath {
             do {
@@ -702,6 +824,23 @@ public final class SingboxRuntime: @unchecked Sendable {
         throw SingboxRuntimeError.proxyStartupFailed(
             reason: logTail.isEmpty ? "Timed out waiting for elevated sing-box on 127.0.0.1:\(SingboxConfigBuilder.localProxyPort)." : logTail
         )
+    }
+
+    private func waitForElevatedRuntimeAlive(elevatedPID: Int32, logPath: String, timeout: TimeInterval = 3) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if !isPIDRunning(elevatedPID) {
+                let logTail = readLogTail(path: logPath)
+                throw SingboxRuntimeError.proxyStartupFailed(
+                    reason: logTail.isEmpty ? "elevated sing-box exited before TUN mode became ready." : logTail
+                )
+            }
+
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+
+        appendOutput(readLogTail(path: logPath))
     }
 
     private func isPIDRunning(_ pid: Int32) -> Bool {

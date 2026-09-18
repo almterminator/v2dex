@@ -116,18 +116,12 @@ final class AppStore: ObservableObject {
             do {
                 let snapshot: TunnelStatusSnapshot
                 if fullSystemTunnelEnabled {
-                    let configData = try SingboxConfigBuilder.build(
-                        node: node,
-                        mode: .full,
-                        appRules: [],
-                        forceTun: true,
-                        setSystemProxy: false
-                    )
-                    snapshot = try SingboxRuntime.shared.start(
-                        configData: configData,
-                        mode: .full,
-                        appRules: [],
-                        manageSystemProxy: false
+                    let xrayConfigData = try XrayConfigBuilder.build(node: node)
+                    let tunConfigData = try SingboxConfigBuilder.buildTunToLocalSocks()
+                    snapshot = try SingboxRuntime.shared.startXrayBackedTun(
+                        xrayConfigData: xrayConfigData,
+                        tunConfigData: tunConfigData,
+                        mode: .full
                     )
                 } else {
                     let configData = try XrayConfigBuilder.build(node: node)
@@ -636,13 +630,7 @@ final class AppStore: ObservableObject {
 
         do {
             let data = fullSystemTunnelEnabled
-                ? try SingboxConfigBuilder.build(
-                    node: node,
-                    mode: .full,
-                    appRules: [],
-                    forceTun: true,
-                    setSystemProxy: false
-                )
+                ? try SingboxConfigBuilder.buildTunToLocalSocks()
                 : try XrayConfigBuilder.build(node: node)
             configPreview = String(decoding: data, as: UTF8.self)
         } catch {
