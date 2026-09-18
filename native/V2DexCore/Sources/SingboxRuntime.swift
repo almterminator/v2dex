@@ -439,6 +439,12 @@ public final class SingboxRuntime: @unchecked Sendable {
                     reason: logTail.isEmpty ? "xray exited after TUN mode started." : logTail
                 )
             }
+            try waitForProxiedHTTPReady(
+                process: process,
+                elevatedPID: pid,
+                proxyPort: localSocksPort,
+                url: "https://www.youtube.com/generate_204"
+            )
             stateQueue.sync {
                 self.connecting = false
                 self.lastConnectedAt = Date()
@@ -901,6 +907,65 @@ public final class SingboxRuntime: @unchecked Sendable {
         }
 
         appendOutput(readLogTail(path: logPath))
+    }
+
+    private func waitForProxiedHTTPReady(
+        process: Process,
+        elevatedPID: Int32,
+        proxyPort: Int,
+        url: String,
+        timeout: TimeInterval = 15
+    ) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        var lastProbeError = ""
+
+        while Date() < deadline {
+            guard process.isRunning else {
+                throw SingboxRuntimeError.proxyStartupFailed(reason: "xray exited during the YouTube connectivity check.")
+            }
+            guard isPIDRunning(elevatedPID) else {
+                throw SingboxRuntimeError.proxyStartupFailed(reason: "TUN exited during the YouTube connectivity check.")
+            }
+
+            let probe = Process()
+            probe.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+            probe.arguments = [
+                "--silent",
+                "--show-error",
+                "--fail",
+                "--max-time",
+                "4",
+                "--socks5-hostname",
+                "\(SingboxConfigBuilder.loopbackProxyHost):\(proxyPort)",
+                "--output",
+                "/dev/null",
+                url
+            ]
+
+            let stderr = Pipe()
+            probe.standardError = stderr
+
+            do {
+                try probe.run()
+                probe.waitUntilExit()
+                if probe.terminationStatus == 0 {
+                    return
+                }
+                lastProbeError = String(
+                    decoding: stderr.fileHandleForReading.readDataToEndOfFile(),
+                    as: UTF8.self
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+            } catch {
+                lastProbeError = error.localizedDescription
+            }
+
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+
+        let reason = lastProbeError.isEmpty
+            ? "YouTube did not respond through the selected config."
+            : "YouTube did not respond through the selected config: \(lastProbeError)"
+        throw SingboxRuntimeError.proxyStartupFailed(reason: reason)
     }
 
     private func isPIDRunning(_ pid: Int32) -> Bool {
